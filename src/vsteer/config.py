@@ -22,6 +22,7 @@ class Config:
     pulse_ms: int = 200
     device_name: str = DEFAULT_DEVICE_NAME
     network_address: str = ""
+    check_updates: bool = True
 
 
 class ConfigError(Exception):
@@ -66,6 +67,9 @@ device_name = {device_name}
 
 [network]
 address = {network_address}   # empty = auto
+
+[updates]
+check = {check_updates}        # look for a new version on GitHub at start
 """
 
 
@@ -80,6 +84,7 @@ def save(cfg: Config, path: Path) -> None:
             max=PULSE_MAX_MS,
             device_name=json.dumps(cfg.device_name),
             network_address=json.dumps(cfg.network_address),
+            check_updates="true" if cfg.check_updates else "false",
         ),
         encoding="utf-8",
     )
@@ -111,6 +116,7 @@ def load(path: Path) -> Config:
         pulse_ms=_get(data, "steer", "pulse_ms", int, defaults.pulse_ms, path),
         device_name=_get(data, "zwift", "device_name", str, defaults.device_name, path),
         network_address=_get(data, "network", "address", str, defaults.network_address, path),
+        check_updates=_get(data, "updates", "check", bool, defaults.check_updates, path),
     )
     if not PULSE_MIN_MS <= cfg.pulse_ms <= PULSE_MAX_MS:
         raise ConfigError(f"{path}: steer.pulse_ms must be {PULSE_MIN_MS}..{PULSE_MAX_MS}, got {cfg.pulse_ms}")

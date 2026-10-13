@@ -13,7 +13,7 @@ import traceback
 from ctypes import wintypes
 from pathlib import Path
 
-from . import __version__, config, net
+from . import __version__, config, net, update
 from .core import Core
 from .ui.console import ConsoleUI
 from .vs200 import Vs200Input, pick_remote
@@ -82,7 +82,22 @@ async def _hint_loop(emulator: RideEmulator) -> None:
             )
 
 
+async def _announce_update(check=update.check_for_update) -> None:
+    tag = await check()
+    if tag:
+        log.warning("New version %s is available: %s", tag, update.RELEASES_PAGE)
+
+
 async def run(cfg: config.Config, cfg_path: Path) -> int:
+    updates = asyncio.create_task(_announce_update()) if cfg.check_updates else None
+    try:
+        return await _ride(cfg, cfg_path)
+    finally:
+        if updates:
+            updates.cancel()
+
+
+async def _ride(cfg: config.Config, cfg_path: Path) -> int:
     if not cfg.vs200_address:
         log.info("First run: wake the VS200 you want to steer with and press any button on it ...")
         address = await pick_remote(timeout=120)

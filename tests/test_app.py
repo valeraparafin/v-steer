@@ -131,3 +131,30 @@ def test_check_fails_when_bluetooth_or_mdns_cannot_start(monkeypatch, capsys):
     monkeypatch.setattr(app, "_smoke_runtime", broken)
     assert app.main(["--check"]) == 1
     assert "winrt projection missing" in capsys.readouterr().out
+
+
+async def test_a_new_release_is_announced_in_the_console(caplog):
+    import logging
+
+    from vsteer import app
+    from vsteer.update import RELEASES_PAGE
+
+    async def newer():
+        return "v0.2.0"
+
+    with caplog.at_level(logging.INFO, logger="vsteer"):
+        await app._announce_update(check=newer)
+    assert "v0.2.0" in caplog.text and RELEASES_PAGE in caplog.text
+
+
+async def test_nothing_is_announced_when_up_to_date(caplog):
+    import logging
+
+    from vsteer import app
+
+    async def none():
+        return None
+
+    with caplog.at_level(logging.INFO, logger="vsteer"):
+        await app._announce_update(check=none)
+    assert "New version" not in caplog.text

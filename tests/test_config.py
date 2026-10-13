@@ -117,3 +117,16 @@ def test_default_path_uses_the_new_folder(monkeypatch, tmp_path):
 
     monkeypatch.setenv("APPDATA", str(tmp_path))
     assert default_path() == tmp_path / "V-Steer" / "config.toml"
+
+
+def test_update_check_is_on_by_default_and_can_be_turned_off(tmp_path):
+    p = tmp_path / "config.toml"
+    assert load(p).check_updates is True
+    p.write_text("[updates]\ncheck = false\n", encoding="utf-8")
+    assert load(p).check_updates is False
+
+
+def test_saved_config_keeps_the_update_switch(tmp_path):
+    p = tmp_path / "config.toml"
+    save(Config(check_updates=False), p)
+    assert load(p).check_updates is False
