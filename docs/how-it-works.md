@@ -65,3 +65,9 @@ loads the Bluetooth and mDNS modules to prove the build is complete.
 1. Bump `__version__` in `src/vsteer/__init__.py` and merge to `main`.
 2. Tag and push: `git tag v0.1.1` then `git push origin v0.1.1`.
 3. CI tests, builds the exe, checks the tag matches the version and publishes the GitHub Release.
+
+## Icon
+
+`packaging/make_icon.py` draws the icon (`packaging/v-steer.ico` for the exe, `docs/icon.png`
+for the README). Edit it and run `.venv\Scripts\python packaging\make_icon.py` (needs `pip install
+pillow`); commit both outputs.

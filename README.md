@@ -1,4 +1,4 @@
-# V-Steer
+# <img src="docs/icon.png" width="40" align="center"> V-Steer
 
 Steer in Zwift with a ThinkRider VS200 thumb remote: tap `+` to move right, `−` to move left.
 Your other VS200 keeps shifting through the trainer as before.
@@ -26,6 +26,11 @@ Keep the window open while you ride; close it to stop.
 Run `V-Steer.exe`, then start Zwift. If Zwift doesn't connect by itself, pair
 **KICKR BIKE PRO 1337** under **Controls** again.
 
+## Updates
+
+When a new version is out, the window says `New version ... is available` with a link. Download
+the new `V-Steer.exe` and replace the old one; your settings stay.
+
 ## Settings
 
 Open `%APPDATA%\V-Steer\config.toml` in Notepad, then restart the app.
@@ -37,6 +42,7 @@ Open `%APPDATA%\V-Steer\config.toml` in Notepad, then restart the app.
 | `address` under `[vs200]` | your remote | clear it (`""`) to pick a different remote |
 | `device_name` | `KICKR BIKE PRO 1337` | the name shown in Zwift |
 | `address` under `[network]` | auto | your PC's LAN IP, if Zwift can't find the app |
+| `check` under `[updates]` | `true` | `false` stops looking for new versions |
 
 ## Troubleshooting
 

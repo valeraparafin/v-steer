@@ -4,7 +4,7 @@ setlocal
 set "PY=%~dp0.venv\Scripts\python.exe"
 if not exist "%PY%" set "PY=python"
 cd /d "%~dp0"
-"%PY%" -m PyInstaller --noconfirm --clean --onefile --console --name V-Steer ^
+"%PY%" -m PyInstaller --noconfirm --clean --onefile --console --name V-Steer --icon packaging\v-steer.ico ^
   --paths src --collect-submodules bleak --collect-submodules winrt --collect-submodules zeroconf ^
   packaging\entry.py || exit /b 1
 "dist\V-Steer.exe" --check
