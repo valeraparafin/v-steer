@@ -8,3 +8,13 @@ Copyright (c) 2026 Amir Lagasse, MIT License — full text in licenses/ZwiftBrid
 Zwift Ride / DirCon protocol facts (mDNS TXT, DirCon property bits, GET pages, the
 DEV_INFO page bytes) were learned from BikeControl (https://github.com/OpenBikeControl/bikecontrol,
 GPL-3.0 era sources) and ZwiftBridge, and verified against Zwift on 2026-10-13.
+
+vs200-steer.exe (built with PyInstaller) bundles:
+- Python (PSF License)
+- bleak (MIT) - https://github.com/hbldh/bleak
+- pywinrt / winrt-* packages (MIT) - https://github.com/pywinrt/pywinrt
+- python-zeroconf (LGPL-2.1-or-later) - https://github.com/python-zeroconf/python-zeroconf
+- ifaddr (MIT) - https://github.com/ifaddr/ifaddr
+- the PyInstaller bootloader (GPL-2.0-or-later with the bootloader exception)
+To use a different version of any of them, rebuild the exe from source with build.cmd
+(see docs/how-it-works.md).
