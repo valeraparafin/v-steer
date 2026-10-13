@@ -1,7 +1,7 @@
-vs200-steer
+V-Steer
 Copyright (c) 2026 valeraparafin. MIT License (see LICENSE).
 
-src/vs200steer/zwift/dircon.py is derived from ZwiftBridge
+src/vsteer/zwift/dircon.py is derived from ZwiftBridge
 (https://github.com/amirlagasse/ZwiftBridge, commit 286cf6bd2e2b500e0d83e5b85bdbff65b325a429),
 Copyright (c) 2026 Amir Lagasse, MIT License — full text in licenses/ZwiftBridge-LICENSE.txt.
 
@@ -9,7 +9,7 @@ Zwift Ride / DirCon protocol facts (mDNS TXT, DirCon property bits, GET pages, t
 DEV_INFO page bytes) were learned from BikeControl (https://github.com/OpenBikeControl/bikecontrol,
 GPL-3.0 era sources) and ZwiftBridge, and verified against Zwift on 2026-10-13.
 
-vs200-steer.exe (built with PyInstaller) bundles:
+V-Steer.exe (built with PyInstaller) bundles:
 - Python (PSF License)
 - bleak (MIT) - https://github.com/hbldh/bleak
 - pywinrt / winrt-* packages (MIT) - https://github.com/pywinrt/pywinrt

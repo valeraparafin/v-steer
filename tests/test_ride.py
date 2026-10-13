@@ -2,11 +2,11 @@ import asyncio
 
 import pytest
 
-from vs200steer.events import Tap
-from vs200steer.zwift import dircon
-from vs200steer.zwift import protocol as P
-from vs200steer.zwift import ride as ride_module
-from vs200steer.zwift.ride import EmulatorState, RideEmulator
+from vsteer.events import Tap
+from vsteer.zwift import dircon
+from vsteer.zwift import protocol as P
+from vsteer.zwift import ride as ride_module
+from vsteer.zwift.ride import EmulatorState, RideEmulator
 
 DISCOVER_CHARACTERISTICS_GOLDEN = (
     "0102010000430000fc8200001000800000805f9b34fb0000000319ca465186e5fa29dcdd09d1020000000219ca465186e5"

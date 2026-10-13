@@ -1,4 +1,4 @@
-"""Entry point: python -m vs200steer [--debug] [--config PATH] [--check] [--version]."""
+"""Entry point: python -m vsteer [--debug] [--config PATH] [--check] [--version]."""
 
 from __future__ import annotations
 
@@ -13,13 +13,13 @@ import traceback
 from ctypes import wintypes
 from pathlib import Path
 
-from . import __version__, config, net
+from . import __version__, config, net, update
 from .core import Core
 from .ui.console import ConsoleUI
 from .vs200 import Vs200Input, pick_remote
 from .zwift.ride import EmulatorState, RideEmulator
 
-log = logging.getLogger("vs200steer")
+log = logging.getLogger("vsteer")
 
 HINT_AFTER_S = 60
 # Loaded lazily at runtime, so a frozen build can miss them; --check imports them up front.
@@ -31,6 +31,7 @@ RUNTIME_MODULES = (
     "zeroconf.asyncio",
     "ifaddr",
 )
+LEGACY_MUTEX = "Local\\vs200-steer"  # the app's mutex before the rename to V-Steer
 _ERROR_ALREADY_EXISTS = 183
 _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 _kernel32.CreateMutexW.restype = wintypes.HANDLE
@@ -38,7 +39,7 @@ _kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCW
 _kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
 
 
-def acquire_single_instance(name: str = "Local\\vs200-steer") -> int | None:
+def acquire_single_instance(name: str = "Local\\v-steer") -> int | None:
     handle = _kernel32.CreateMutexW(None, False, name)
     if not handle:
         return None
@@ -50,6 +51,15 @@ def acquire_single_instance(name: str = "Local\\vs200-steer") -> int | None:
 
 def release_single_instance(handle: int) -> None:
     _kernel32.CloseHandle(handle)
+
+
+def legacy_instance_running(name: str = LEGACY_MUTEX) -> bool:
+    """Is a pre-rename vs200-steer running? It uses another mutex name, so the normal check misses it."""
+    handle = acquire_single_instance(name)
+    if handle is None:
+        return True
+    release_single_instance(handle)
+    return False
 
 
 def should_hint(state: EmulatorState, elapsed_s: float, hinted: bool) -> bool:
@@ -76,13 +86,28 @@ async def _hint_loop(emulator: RideEmulator) -> None:
             hinted = True
             log.warning(
                 "Zwift has not connected yet. In Zwift: Paired Devices -> Controls -> pair '%s'. "
-                "If it is not listed: allow vs200-steer/Python through Windows Firewall, "
+                "If it is not listed: allow V-Steer/Python through Windows Firewall, "
                 "check the PC and Zwift are on the same network, or set [network] address in the config.",
                 emulator.advertised_name,
             )
 
 
+async def _announce_update(check=update.check_for_update) -> None:
+    tag = await check()
+    if tag:
+        log.warning("New version %s is available: %s", tag, update.RELEASES_PAGE)
+
+
 async def run(cfg: config.Config, cfg_path: Path) -> int:
+    updates = asyncio.create_task(_announce_update()) if cfg.check_updates else None
+    try:
+        return await _ride(cfg, cfg_path)
+    finally:
+        if updates:
+            updates.cancel()
+
+
+async def _ride(cfg: config.Config, cfg_path: Path) -> int:
     if not cfg.vs200_address:
         log.info("First run: wake the VS200 you want to steer with and press any button on it ...")
         address = await pick_remote(timeout=120)
@@ -140,31 +165,38 @@ def check_runtime() -> int:
         except Exception as exc:  # noqa: BLE001 - any failure here means the build is broken
             missing.append(f"runtime: {exc!r}")
     if missing:
-        print("vs200-steer check FAILED:")
+        print("V-Steer check FAILED:")
         for line in missing:
             print(f"  {line}")
         return 1
-    print(f"vs200-steer {__version__} check OK")
+    print(f"V-Steer {__version__} check OK")
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="vs200-steer", description="Steer in Zwift with a ThinkRider VS200.")
+    parser = argparse.ArgumentParser(prog="v-steer", description="Steer in Zwift with a ThinkRider VS200.")
     parser.add_argument("--debug", action="store_true", help="log the full DirCon traffic")
     parser.add_argument("--config", type=Path, default=None, help="config file path")
     parser.add_argument("--check", action="store_true", help="check that Bluetooth and mDNS modules load, then exit")
-    parser.add_argument("--version", action="version", version=f"vs200-steer {__version__}")
+    parser.add_argument("--version", action="version", version=f"V-Steer {__version__}")
     args = parser.parse_args(argv)
     if args.check:
         return check_runtime()
+    if legacy_instance_running():
+        # Plain print: the log file lives in the settings folder, which is not set up yet.
+        print("An older vs200-steer is still running. Close its window, then start V-Steer again.")
+        return 1
     cfg_path = args.config or config.default_path()
-    setup_logging(args.debug, cfg_path.parent / "vs200-steer.log")
-    log.info("vs200-steer %s", __version__)
+    setup_logging(args.debug, cfg_path.parent / "v-steer.log")
+    log.info("V-Steer %s", __version__)
 
     handle = acquire_single_instance()
     if handle is None:
-        log.error("vs200-steer is already running.")
+        log.error("V-Steer is already running.")
         return 1
+    moved_from = None if args.config else config.migrate_legacy_config()
+    if moved_from:
+        log.info("Moved settings from %s to %s", moved_from, cfg_path)
     try:
         try:
             cfg = config.load(cfg_path)
@@ -176,7 +208,7 @@ def main(argv: list[str] | None = None) -> int:
         log.info("Stopped.")
         return 0
     except Exception:
-        log.exception("vs200-steer stopped on an unexpected error (details in %s)", cfg_path.parent / "vs200-steer.log")
+        log.exception("V-Steer stopped on an unexpected error (details in %s)", cfg_path.parent / "v-steer.log")
         return 1
     finally:
         release_single_instance(handle)

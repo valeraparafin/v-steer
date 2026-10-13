@@ -1,6 +1,6 @@
 import pytest
 
-from vs200steer.config import Config, ConfigError, load, save
+from vsteer.config import Config, ConfigError, load, save
 
 
 def test_missing_file_is_created_with_defaults(tmp_path):
@@ -70,3 +70,80 @@ def test_section_must_be_a_table(tmp_path):
     path.write_text("steer = 300\n", encoding="utf-8")
     with pytest.raises(ConfigError, match=r"\[steer\]"):
         load(path)
+
+
+def _old_config(appdata):
+    old = appdata / "vs200-steer"
+    old.mkdir()
+    (old / "config.toml").write_text('[vs200]\naddress = "D3:F7:DD:C8:6A:69"\n', encoding="utf-8")
+    (old / "vs200-steer.log").write_text("old log", encoding="utf-8")
+    return old
+
+
+def test_old_settings_move_to_the_new_folder(tmp_path):
+    from vsteer.config import migrate_legacy_config
+
+    old = _old_config(tmp_path)
+    assert migrate_legacy_config(tmp_path) == old / "config.toml"
+    assert "D3:F7:DD:C8:6A:69" in (tmp_path / "V-Steer" / "config.toml").read_text(encoding="utf-8")
+    assert not (tmp_path / "V-Steer" / "vs200-steer.log").exists()  # old logs stay behind
+
+
+def test_settings_move_even_if_the_new_folder_already_has_a_log(tmp_path):
+    from vsteer.config import migrate_legacy_config
+
+    _old_config(tmp_path)
+    (tmp_path / "V-Steer").mkdir()
+    (tmp_path / "V-Steer" / "v-steer.log").write_text("", encoding="utf-8")
+    assert migrate_legacy_config(tmp_path) is not None
+    assert (tmp_path / "V-Steer" / "config.toml").exists()
+
+
+def test_existing_new_settings_are_left_alone(tmp_path):
+    from vsteer.config import migrate_legacy_config
+
+    _old_config(tmp_path)
+    (tmp_path / "V-Steer").mkdir()
+    (tmp_path / "V-Steer" / "config.toml").write_text("[vs200]\nswap = true\n", encoding="utf-8")
+    assert migrate_legacy_config(tmp_path) is None
+    assert "swap = true" in (tmp_path / "V-Steer" / "config.toml").read_text(encoding="utf-8")
+
+
+def test_nothing_to_move_on_a_fresh_pc(tmp_path):
+    from vsteer.config import migrate_legacy_config
+
+    assert migrate_legacy_config(tmp_path) is None
+
+
+def test_a_failed_move_does_not_stop_the_app(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from vsteer.config import migrate_legacy_config
+
+    _old_config(tmp_path)
+
+    def locked(self, target):
+        raise PermissionError("in use")
+
+    monkeypatch.setattr(Path, "replace", locked)
+    assert migrate_legacy_config(tmp_path) is None
+
+
+def test_default_path_uses_the_new_folder(monkeypatch, tmp_path):
+    from vsteer.config import default_path
+
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    assert default_path() == tmp_path / "V-Steer" / "config.toml"
+
+
+def test_update_check_is_on_by_default_and_can_be_turned_off(tmp_path):
+    p = tmp_path / "config.toml"
+    assert load(p).check_updates is True
+    p.write_text("[updates]\ncheck = false\n", encoding="utf-8")
+    assert load(p).check_updates is False
+
+
+def test_saved_config_keeps_the_update_switch(tmp_path):
+    p = tmp_path / "config.toml"
+    save(Config(check_updates=False), p)
+    assert load(p).check_updates is False

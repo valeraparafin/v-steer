@@ -1,10 +1,10 @@
 import logging
 
-from vs200steer.config import Config
-from vs200steer.core import Core, Status
-from vs200steer.events import Tap
-from vs200steer.vs200 import InputState
-from vs200steer.zwift.ride import EmulatorState
+from vsteer.config import Config
+from vsteer.core import Core, Status
+from vsteer.events import Tap
+from vsteer.vs200 import InputState
+from vsteer.zwift.ride import EmulatorState
 
 
 class FakeEmulator:
@@ -35,7 +35,7 @@ async def test_swap_inverts_direction():
 
 async def test_dropped_pulse_is_logged(caplog):
     core = Core(Config(), FakeEmulator(delivered=False))
-    with caplog.at_level(logging.INFO, logger="vs200steer"):
+    with caplog.at_level(logging.INFO, logger="vsteer"):
         core.on_tap(Tap.LEFT)
         await core.wait_idle()
     assert "dropped" in caplog.text

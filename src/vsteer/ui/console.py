@@ -6,7 +6,7 @@ import logging
 
 from ..core import Status
 
-log = logging.getLogger("vs200steer")
+log = logging.getLogger("vsteer")
 
 
 def format_status(status: Status) -> str:

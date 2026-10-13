@@ -1,14 +1,14 @@
 import uuid
 
-from vs200steer.app import acquire_single_instance, release_single_instance, should_hint
-from vs200steer.core import Status
-from vs200steer.ui.console import format_status
-from vs200steer.vs200 import InputState
-from vs200steer.zwift.ride import EmulatorState
+from vsteer.app import acquire_single_instance, release_single_instance, should_hint
+from vsteer.core import Status
+from vsteer.ui.console import format_status
+from vsteer.vs200 import InputState
+from vsteer.zwift.ride import EmulatorState
 
 
 def test_second_instance_is_refused():
-    name = f"Local\\vs200-steer-test-{uuid.uuid4()}"
+    name = f"Local\\V-Steer-test-{uuid.uuid4()}"
     first = acquire_single_instance(name)
     assert first is not None
     assert acquire_single_instance(name) is None
@@ -31,7 +31,7 @@ def test_format_status():
 
 
 def test_unexpected_error_is_reported_not_raised(tmp_path, monkeypatch):
-    from vs200steer import app
+    from vsteer import app
 
     async def boom(cfg, cfg_path):
         raise RuntimeError("bluetooth stack exploded")
@@ -45,7 +45,7 @@ def test_unexpected_error_is_reported_not_raised(tmp_path, monkeypatch):
 def test_version_flag_prints_version(capsys):
     import pytest
 
-    from vs200steer import __version__, app
+    from vsteer import __version__, app
 
     with pytest.raises(SystemExit) as exc:
         app.main(["--version"])
@@ -54,22 +54,22 @@ def test_version_flag_prints_version(capsys):
 
 
 def test_check_loads_bluetooth_and_mdns(capsys):
-    from vs200steer import app
+    from vsteer import app
 
     assert app.main(["--check"]) == 0
     assert "OK" in capsys.readouterr().out
 
 
 def test_check_fails_when_a_module_is_missing(monkeypatch, capsys):
-    from vs200steer import app
+    from vsteer import app
 
-    monkeypatch.setattr(app, "RUNTIME_MODULES", ("vs200steer_no_such_module",))
+    monkeypatch.setattr(app, "RUNTIME_MODULES", ("vsteer_no_such_module",))
     assert app.main(["--check"]) == 1
-    assert "vs200steer_no_such_module" in capsys.readouterr().out
+    assert "vsteer_no_such_module" in capsys.readouterr().out
 
 
 def _exe_main(monkeypatch, rc, *, frozen, interactive):
-    from vs200steer import app
+    from vsteer import app
 
     paused = []
     monkeypatch.setattr(app, "main", lambda argv=None: rc)
@@ -93,7 +93,7 @@ def test_exe_does_not_wait_for_enter_without_a_console(monkeypatch):
 
 
 def _exe_main_raising(monkeypatch, exc):
-    from vs200steer import app
+    from vsteer import app
 
     paused = []
 
@@ -123,7 +123,7 @@ def test_exe_closes_after_version(monkeypatch):
 
 
 def test_check_fails_when_bluetooth_or_mdns_cannot_start(monkeypatch, capsys):
-    from vs200steer import app
+    from vsteer import app
 
     async def broken():
         raise OSError("winrt projection missing")
@@ -131,3 +131,48 @@ def test_check_fails_when_bluetooth_or_mdns_cannot_start(monkeypatch, capsys):
     monkeypatch.setattr(app, "_smoke_runtime", broken)
     assert app.main(["--check"]) == 1
     assert "winrt projection missing" in capsys.readouterr().out
+
+
+async def test_a_new_release_is_announced_in_the_console(caplog):
+    import logging
+
+    from vsteer import app
+    from vsteer.update import RELEASES_PAGE
+
+    async def newer():
+        return "v0.2.0"
+
+    with caplog.at_level(logging.INFO, logger="vsteer"):
+        await app._announce_update(check=newer)
+    assert "v0.2.0" in caplog.text and RELEASES_PAGE in caplog.text
+
+
+async def test_nothing_is_announced_when_up_to_date(caplog):
+    import logging
+
+    from vsteer import app
+
+    async def none():
+        return None
+
+    with caplog.at_level(logging.INFO, logger="vsteer"):
+        await app._announce_update(check=none)
+    assert "New version" not in caplog.text
+
+
+def test_an_old_vs200_steer_still_running_is_detected():
+    from vsteer.app import legacy_instance_running
+
+    name = f"Local\vs200-steer-test-{uuid.uuid4()}"
+    assert legacy_instance_running(name) is False
+    held = acquire_single_instance(name)
+    assert legacy_instance_running(name) is True
+    release_single_instance(held)
+
+
+def test_v_steer_refuses_to_start_next_to_an_old_copy(monkeypatch, capsys):
+    from vsteer import app
+
+    monkeypatch.setattr(app, "legacy_instance_running", lambda name=None: True)
+    assert app.main([]) == 1
+    assert "vs200-steer" in capsys.readouterr().out

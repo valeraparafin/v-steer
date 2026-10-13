@@ -1,4 +1,4 @@
-from vs200steer.zwift import dircon
+from vsteer.zwift import dircon
 
 ASYNC = "00000002-19ca-4651-86e5-fa29dcdd09d1"
 

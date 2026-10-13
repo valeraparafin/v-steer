@@ -1,5 +1,5 @@
-"""PyInstaller entry point for vs200-steer.exe (__main__.py uses a relative import)."""
+"""PyInstaller entry point for V-Steer.exe (__main__.py uses a relative import)."""
 
-from vs200steer.app import exe_main
+from vsteer.app import exe_main
 
 raise SystemExit(exe_main())

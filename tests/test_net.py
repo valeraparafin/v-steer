@@ -1,4 +1,4 @@
-from vs200steer.net import Adapter, pick_address
+from vsteer.net import Adapter, pick_address
 
 # The author's real adapter list on 2026-10-13 (VPN up, Hyper-V, Bluetooth PAN).
 REAL = [

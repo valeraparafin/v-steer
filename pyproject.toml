@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "vs200-steer"
+name = "v-steer"
 dynamic = ["version"]
 description = "Steer in Zwift with a ThinkRider VS200 thumb remote"
 readme = "README.md"
@@ -16,10 +16,10 @@ dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6"]
 build = ["pyinstaller>=6.10"]
 
 [project.scripts]
-vs200-steer = "vs200steer.app:main"
+v-steer = "vsteer.app:main"
 
 [tool.setuptools.dynamic]
-version = { attr = "vs200steer.__version__" }
+version = { attr = "vsteer.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -32,4 +32,4 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 110
 target-version = "py311"
-extend-exclude = ["src/vs200steer/zwift/dircon.py"]
+extend-exclude = ["src/vsteer/zwift/dircon.py"]
