@@ -1,0 +1,43 @@
+import pytest
+
+from vs200steer.config import Config, ConfigError, load, save
+
+
+def test_missing_file_is_created_with_defaults(tmp_path):
+    path = tmp_path / "sub" / "config.toml"
+    cfg = load(path)
+    assert cfg == Config()
+    assert path.exists()
+    assert load(path) == Config()
+
+
+def test_roundtrip(tmp_path):
+    path = tmp_path / "config.toml"
+    cfg = Config(vs200_address="D3:F7:DD:C8:6A:69", swap=True, pulse_ms=300,
+                 device_name='My "Ride"', network_address="192.168.1.140")
+    save(cfg, path)
+    assert load(path) == cfg
+
+
+def test_corrupt_file_raises_config_error_with_path(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text("[steer\npulse_ms = ", encoding="utf-8")
+    with pytest.raises(ConfigError) as err:
+        load(path)
+    assert str(path) in str(err.value)
+
+
+@pytest.mark.parametrize("value", ["10", "5000", '"fast"', "true"])
+def test_pulse_ms_out_of_range_rejected(tmp_path, value):
+    path = tmp_path / "config.toml"
+    path.write_text(f"[steer]\npulse_ms = {value}\n", encoding="utf-8")
+    with pytest.raises(ConfigError) as err:
+        load(path)
+    assert "steer.pulse_ms" in str(err.value) and str(path) in str(err.value)
+
+
+def test_swap_must_be_boolean(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text('[vs200]\nswap = "yes"\n', encoding="utf-8")
+    with pytest.raises(ConfigError, match="vs200.swap"):
+        load(path)
