@@ -1,0 +1,134 @@
+"""Entry point: python -m vs200steer [--debug] [--config PATH]."""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import ctypes
+import logging
+import logging.handlers
+from ctypes import wintypes
+from pathlib import Path
+
+from . import __version__, config, net
+from .core import Core
+from .ui.console import ConsoleUI
+from .vs200 import Vs200Input, pick_remote
+from .zwift.ride import EmulatorState, RideEmulator
+
+log = logging.getLogger("vs200steer")
+
+HINT_AFTER_S = 60
+_ERROR_ALREADY_EXISTS = 183
+_kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+_kernel32.CreateMutexW.restype = wintypes.HANDLE
+_kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+_kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+
+
+def acquire_single_instance(name: str = "Local\\vs200-steer") -> int | None:
+    handle = _kernel32.CreateMutexW(None, False, name)
+    if not handle:
+        return None
+    if ctypes.get_last_error() == _ERROR_ALREADY_EXISTS:
+        _kernel32.CloseHandle(handle)
+        return None
+    return handle
+
+
+def release_single_instance(handle: int) -> None:
+    _kernel32.CloseHandle(handle)
+
+
+def should_hint(state: EmulatorState, elapsed_s: float, hinted: bool) -> bool:
+    return not hinted and elapsed_s >= HINT_AFTER_S and state is EmulatorState.ADVERTISING
+
+
+def setup_logging(debug: bool, log_path: Path) -> None:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log.setLevel(logging.DEBUG if debug else logging.INFO)
+    console = logging.StreamHandler()
+    console.setFormatter(logging.Formatter("%(asctime)s %(message)s", "%H:%M:%S"))
+    file = logging.handlers.RotatingFileHandler(log_path, maxBytes=1_000_000, backupCount=3, encoding="utf-8")
+    file.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    log.addHandler(console)
+    log.addHandler(file)
+
+
+async def _hint_loop(emulator: RideEmulator) -> None:
+    loop = asyncio.get_running_loop()
+    started, hinted = loop.time(), False
+    while not hinted:
+        await asyncio.sleep(5)
+        if should_hint(emulator.state, loop.time() - started, hinted):
+            hinted = True
+            log.warning(
+                "Zwift has not connected yet. In Zwift: Paired Devices -> Controls -> pair '%s'. "
+                "If it is not listed: allow vs200-steer/Python through Windows Firewall, "
+                "check the PC and Zwift are on the same network, or set [network] address in the config.",
+                emulator.advertised_name,
+            )
+
+
+async def run(cfg: config.Config, cfg_path: Path) -> int:
+    if not cfg.vs200_address:
+        log.info("First run: wake the VS200 you want to steer with and press any button on it ...")
+        address = await pick_remote(timeout=120)
+        if not address:
+            log.error("No VS200 was pressed within 2 minutes. Is it awake and not connected to the trainer?")
+            return 2
+        cfg.vs200_address = address
+        config.save(cfg, cfg_path)
+        log.info("Saved VS200 %s to %s", address, cfg_path)
+
+    lan = cfg.network_address or net.pick_address(net.list_adapters(), net.default_route_ip())
+    if not lan:
+        log.error("No LAN address found to advertise on. Set [network] address in %s", cfg_path)
+        return 2
+
+    emulator = RideEmulator(lan, device_name=cfg.device_name)
+    core = Core(cfg, emulator)
+    core.subscribe(ConsoleUI().on_status)
+    emulator.on_state_change = core.on_emulator_state
+    vs200 = Vs200Input(cfg.vs200_address, on_tap=core.on_tap, on_state=core.on_input_state)
+
+    await emulator.start()
+    log.info("Advertising '%s' on %s:%d. In Zwift: Paired Devices -> Controls -> pair it.",
+             emulator.advertised_name, lan, emulator.bound_port)
+    hint = asyncio.create_task(_hint_loop(emulator))
+    try:
+        await vs200.run()
+    finally:
+        hint.cancel()
+        await emulator.stop()
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="vs200-steer", description="Steer in Zwift with a ThinkRider VS200.")
+    parser.add_argument("--debug", action="store_true", help="log the full DirCon traffic")
+    parser.add_argument("--config", type=Path, default=None, help="config file path")
+    args = parser.parse_args(argv)
+    cfg_path = args.config or config.default_path()
+    setup_logging(args.debug, cfg_path.parent / "vs200-steer.log")
+    log.info("vs200-steer %s", __version__)
+
+    handle = acquire_single_instance()
+    if handle is None:
+        log.error("vs200-steer is already running.")
+        return 1
+    try:
+        try:
+            cfg = config.load(cfg_path)
+        except config.ConfigError as exc:
+            log.error("Config error: %s", exc)
+            return 2
+        return asyncio.run(run(cfg, cfg_path))
+    except KeyboardInterrupt:
+        log.info("Stopped.")
+        return 0
+    except Exception:
+        log.exception("vs200-steer stopped on an unexpected error (details in %s)", cfg_path.parent / "vs200-steer.log")
+        return 1
+    finally:
+        release_single_instance(handle)
