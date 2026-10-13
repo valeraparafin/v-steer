@@ -9,7 +9,7 @@ from enum import Enum
 
 from .events import Tap
 
-log = logging.getLogger("vs200steer")
+log = logging.getLogger("vsteer")
 
 NAME_PREFIX = "THINK VS"
 FEA1_UUID = "0000fea1-0000-1000-8000-00805f9b34fb"

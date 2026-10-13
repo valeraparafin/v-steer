@@ -1,4 +1,4 @@
-"""%APPDATA%\\vs200-steer\\config.toml — read with tomllib, written from a fixed template."""
+"""%APPDATA%\\V-Steer\\config.toml — read with tomllib, written from a fixed template."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ class ConfigError(Exception):
 
 
 def default_path() -> Path:
-    return Path(os.environ.get("APPDATA", str(Path.home()))) / "vs200-steer" / "config.toml"
+    return Path(os.environ.get("APPDATA", str(Path.home()))) / "V-Steer" / "config.toml"
 
 
 _TEMPLATE = """\

@@ -13,7 +13,7 @@ from ..events import Tap
 from . import dircon
 from . import protocol as P
 
-log = logging.getLogger("vs200steer")
+log = logging.getLogger("vsteer")
 
 PORT_RANGE = 10
 NAME_ATTEMPTS = 5
@@ -108,7 +108,7 @@ class RideEmulator:
         self._zeroconf = AsyncZeroconf()
         for attempt in range(NAME_ATTEMPTS):
             name = self.device_name if attempt == 0 else f"{self.device_name} {attempt + 1}"
-            label = "".join(c if c.isalnum() else "-" for c in name).strip("-").lower() or "vs200-steer"
+            label = "".join(c if c.isalnum() else "-" for c in name).strip("-").lower() or "v-steer"
             info = ServiceInfo(
                 P.MDNS_SERVICE_TYPE,
                 f"{name}.{P.MDNS_SERVICE_TYPE}",

@@ -42,17 +42,17 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: |
-          version=$(python -c "import vs200steer; print(vs200steer.__version__)")
+          version=$(python -c "import vsteer; print(vsteer.__version__)")
           if [ "v$version" != "$GITHUB_REF_NAME" ]; then
             echo "::error::tag $GITHUB_REF_NAME does not match __version__ $version"
             exit 1
           fi
-      - name: Build vs200-steer.exe (runs --check)
+      - name: Build V-Steer.exe (runs --check)
         run: .\build.cmd
       - uses: actions/upload-artifact@v7
         with:
-          name: vs200-steer-exe
-          path: dist/vs200-steer.exe
+          name: v-steer-exe
+          path: dist/V-Steer.exe
           if-no-files-found: error
 
   release:
@@ -65,7 +65,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
-          name: vs200-steer-exe
+          name: v-steer-exe
           path: dist
       - name: Publish the GitHub Release
         env:
@@ -73,10 +73,10 @@ jobs:
         run: |
           # A re-run after a failed upload finds the release already there: just (re)attach the exe.
           if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/vs200-steer.exe --clobber
+            gh release upload "$GITHUB_REF_NAME" dist/V-Steer.exe --clobber
           else
-            gh release create "$GITHUB_REF_NAME" dist/vs200-steer.exe \
-              --title "vs200-steer $GITHUB_REF_NAME" \
+            gh release create "$GITHUB_REF_NAME" dist/V-Steer.exe \
+              --title "V-Steer $GITHUB_REF_NAME" \
               --notes-file packaging/release-notes.md \
               --generate-notes
           fi

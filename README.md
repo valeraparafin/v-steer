@@ -1,4 +1,4 @@
-# vs200-steer
+# V-Steer
 
 Steer in Zwift with a ThinkRider VS200 thumb remote: tap `+` to move right, `−` to move left.
 Your other VS200 keeps shifting through the trainer as before.
@@ -11,7 +11,7 @@ Your other VS200 keeps shifting through the trainer as before.
 
 ## First run
 
-1. Download `vs200-steer.exe` from [Releases](https://github.com/valeraparafin/vs200-steer/releases/latest).
+1. Download `V-Steer.exe` from [Releases](https://github.com/valeraparafin/v-steer/releases/latest).
 2. Run it. If Windows says it protected your PC, click **More info → Run anyway**.
 3. If Windows Firewall asks, click **Allow** (Private networks is enough).
 4. Wake the steering VS200 and press any button on it. The app remembers this remote.
@@ -23,12 +23,12 @@ Keep the window open while you ride; close it to stop.
 
 ## Every next ride
 
-Run `vs200-steer.exe`, then start Zwift. If Zwift doesn't connect by itself, pair
+Run `V-Steer.exe`, then start Zwift. If Zwift doesn't connect by itself, pair
 **KICKR BIKE PRO 1337** under **Controls** again.
 
 ## Settings
 
-Open `%APPDATA%\vs200-steer\config.toml` in Notepad, then restart the app.
+Open `%APPDATA%\V-Steer\config.toml` in Notepad, then restart the app.
 
 | setting | default | what it does |
 |---------|---------|--------------|
@@ -47,12 +47,12 @@ Open `%APPDATA%\vs200-steer\config.toml` in Notepad, then restart the app.
 - **The remote isn't found**: press a button to wake it (it sleeps after ~30 min). It must not be
   connected to the trainer or another app.
 - **The antivirus deletes the exe**: this is a known false alarm for unsigned Python apps; restore
-  it from quarantine or [report it](https://github.com/valeraparafin/vs200-steer/issues).
+  it from quarantine or [report it](https://github.com/valeraparafin/v-steer/issues).
 
 ## Report a problem
 
-[Open an issue](https://github.com/valeraparafin/vs200-steer/issues/new) and attach
-`%APPDATA%\vs200-steer\vs200-steer.log`.
+[Open an issue](https://github.com/valeraparafin/v-steer/issues/new) and attach
+`%APPDATA%\V-Steer\v-steer.log`.
 
 ## More
 

@@ -1,7 +1,7 @@
 # Vendored from ZwiftBridge (https://github.com/amirlagasse/ZwiftBridge),
 # commit 286cf6bd2e2b500e0d83e5b85bdbff65b325a429, src/zwiftbridge/dircon.py.
 # Copyright (c) 2026 Amir Lagasse. MIT License — see NOTICE.
-# Local change: logger name "zwiftbridge" -> "vs200steer".
+# Local change: logger name "zwiftbridge" -> "vsteer".
 """DirCon (Wahoo Direct Connect) framing.
 
 DirCon carries a BLE service over TCP: a client discovers services and
@@ -140,7 +140,7 @@ import asyncio  # noqa: E402
 import logging  # noqa: E402
 from typing import Callable  # noqa: E402
 
-log = logging.getLogger("vs200steer")
+log = logging.getLogger("vsteer")
 
 
 class Characteristic:

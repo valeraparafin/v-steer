@@ -2,8 +2,8 @@ import asyncio
 from types import SimpleNamespace
 from typing import ClassVar
 
-from vs200steer.events import Tap
-from vs200steer.vs200 import FEA1_UUID, InputState, Vs200Input, parse_packet, pick_remote
+from vsteer.events import Tap
+from vsteer.vs200 import FEA1_UUID, InputState, Vs200Input, parse_packet, pick_remote
 
 
 class FakeClient:

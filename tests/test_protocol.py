@@ -1,7 +1,7 @@
 import pytest
 
-from vs200steer.events import Tap
-from vs200steer.zwift import protocol as P
+from vsteer.events import Tap
+from vsteer.zwift import protocol as P
 
 
 def test_dpad_frames_match_the_spike():

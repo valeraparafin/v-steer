@@ -12,7 +12,7 @@ from .events import Tap
 from .vs200 import InputState
 from .zwift.ride import EmulatorState
 
-log = logging.getLogger("vs200steer")
+log = logging.getLogger("vsteer")
 
 
 @dataclass(frozen=True)

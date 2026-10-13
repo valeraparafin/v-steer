@@ -1,7 +1,7 @@
-# How vs200-steer works
+# How V-Steer works
 
 ```
-VS200 --BLE notify--> vs200-steer --DirCon over TCP + mDNS--> Zwift
+VS200 --BLE notify--> V-Steer --DirCon over TCP + mDNS--> Zwift
 ```
 
 - **Input.** The VS200 sends one BLE notification per press on characteristic `0xFEA1`
@@ -19,27 +19,27 @@ The full protocol notes and design decisions are in
 
 | file | job |
 |------|-----|
-| `src/vs200steer/vs200.py` | find, pick and reconnect the VS200; turn packets into taps |
-| `src/vs200steer/zwift/ride.py` | Zwift Ride emulation: DirCon server, mDNS, D-pad pulses, keepalive |
-| `src/vs200steer/zwift/dircon.py` | DirCon server, vendored from ZwiftBridge (MIT) |
-| `src/vs200steer/zwift/protocol.py` | UUIDs, frames, GET replies |
-| `src/vs200steer/core.py` | wires taps to pulses, publishes status |
-| `src/vs200steer/net.py` | picks the LAN address to advertise |
-| `src/vs200steer/config.py` | `%APPDATA%\vs200-steer\config.toml` |
-| `src/vs200steer/app.py` | command line, logging, single instance |
+| `src/vsteer/vs200.py` | find, pick and reconnect the VS200; turn packets into taps |
+| `src/vsteer/zwift/ride.py` | Zwift Ride emulation: DirCon server, mDNS, D-pad pulses, keepalive |
+| `src/vsteer/zwift/dircon.py` | DirCon server, vendored from ZwiftBridge (MIT) |
+| `src/vsteer/zwift/protocol.py` | UUIDs, frames, GET replies |
+| `src/vsteer/core.py` | wires taps to pulses, publishes status |
+| `src/vsteer/net.py` | picks the LAN address to advertise |
+| `src/vsteer/config.py` | `%APPDATA%\V-Steer\config.toml` |
+| `src/vsteer/app.py` | command line, logging, single instance |
 
 ## Run from source
 
 Needs Python 3.11+.
 
 ```bat
-git clone https://github.com/valeraparafin/vs200-steer.git
-cd vs200-steer
+git clone https://github.com/valeraparafin/v-steer.git
+cd v-steer
 .\setup.cmd
 .\run.cmd
 ```
 
-`.\run.cmd --debug` logs the full DirCon traffic to `%APPDATA%\vs200-steer\vs200-steer.log`.
+`.\run.cmd --debug` logs the full DirCon traffic to `%APPDATA%\V-Steer\v-steer.log`.
 
 ## Tests
 
@@ -57,11 +57,11 @@ No hardware needed: Bluetooth and Zwift are faked.
 .\build.cmd
 ```
 
-The result is `dist\vs200-steer.exe`. `build.cmd` finishes with `vs200-steer.exe --check`, which
+The result is `dist\V-Steer.exe`. `build.cmd` finishes with `V-Steer.exe --check`, which
 loads the Bluetooth and mDNS modules to prove the build is complete.
 
 ## Release
 
-1. Bump `__version__` in `src/vs200steer/__init__.py` and merge to `main`.
+1. Bump `__version__` in `src/vsteer/__init__.py` and merge to `main`.
 2. Tag and push: `git tag v0.1.1` then `git push origin v0.1.1`.
 3. CI tests, builds the exe, checks the tag matches the version and publishes the GitHub Release.

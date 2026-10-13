@@ -1,6 +1,6 @@
 import pytest
 
-from vs200steer.config import Config, ConfigError, load, save
+from vsteer.config import Config, ConfigError, load, save
 
 
 def test_missing_file_is_created_with_defaults(tmp_path):
