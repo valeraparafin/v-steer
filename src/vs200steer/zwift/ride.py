@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import socket
 from enum import Enum
 from typing import Callable
@@ -184,14 +185,13 @@ class RideEmulator:
             if self._state is not EmulatorState.READY:
                 return False
             frame = P.keypad_frame(direction)
-            loop = asyncio.get_running_loop()
-            end = loop.time() + ms / 1000
-            while True:
+            # A fixed number of sends: Windows' ~15 ms timer makes short sleeps return at once,
+            # and a clock-driven loop would then flood Zwift until the deadline passed.
+            repeat_ms = max(1, round(self.repeat_s * 1000))
+            sends = max(1, math.ceil(ms / repeat_ms))  # integer ms: 200 / 50 is exactly 4 sends
+            for i in range(sends):
                 await self._send(P.ASYNC_CHAR_UUID, frame)
-                remaining = end - loop.time()
-                if remaining <= 0:
-                    break
-                await asyncio.sleep(min(self.repeat_s, remaining))
+                await asyncio.sleep(min(repeat_ms, ms - i * repeat_ms) / 1000)
             await self._send(P.ASYNC_CHAR_UUID, P.RELEASED_FRAME)
             await asyncio.sleep(self.gap_s)
             return True

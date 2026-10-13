@@ -4,6 +4,7 @@ import pytest
 
 from vs200steer.events import Tap
 from vs200steer.zwift import dircon
+from vs200steer.zwift import ride as ride_module
 from vs200steer.zwift import protocol as P
 from vs200steer.zwift.ride import EmulatorState, RideEmulator
 
@@ -143,8 +144,25 @@ async def test_pulse_sends_pressed_then_released(emu):
     assert await emu.pulse(Tap.LEFT, 120) is True
     packets = await z.drain_packets()
     pressed = [p for p in packets if p.payload[16:] == P.keypad_frame(Tap.LEFT)]
-    assert 2 <= len(pressed) <= 5  # re-sent every 50 ms for 120 ms (Windows timers are coarse)
+    assert len(pressed) == 3  # re-sent every 50 ms for 120 ms
     assert frames(packets) == [P.keypad_frame(Tap.LEFT), P.RELEASED_FRAME]
+    await z.close()
+
+
+@pytest.mark.parametrize("ms,expected_sends", [(120, 3), (200, 4), (50, 1), (60, 2)])
+async def test_pulse_frame_count_does_not_depend_on_timer_resolution(emu, monkeypatch, ms, expected_sends):
+    """Windows' ~15 ms timer makes short sleeps return at once; a pulse must not then flood Zwift."""
+    z = await FakeZwift.connect(emu.bound_port)
+    await z.session()
+
+    async def instant_sleep(_delay):
+        return None
+
+    with monkeypatch.context() as m:
+        m.setattr(ride_module.asyncio, "sleep", instant_sleep)
+        assert await asyncio.wait_for(emu.pulse(Tap.LEFT, ms), 2.0) is True
+    pressed = [p for p in await z.drain_packets() if p.payload[16:] == P.keypad_frame(Tap.LEFT)]
+    assert len(pressed) == expected_sends  # one send per started 50 ms of the pulse
     await z.close()
 
 
