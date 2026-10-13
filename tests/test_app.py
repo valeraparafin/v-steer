@@ -90,3 +90,44 @@ def test_exe_closes_normally_after_a_clean_stop(monkeypatch):
 def test_exe_does_not_wait_for_enter_without_a_console(monkeypatch):
     assert not _exe_main(monkeypatch, 1, frozen=True, interactive=False)
     assert not _exe_main(monkeypatch, 1, frozen=False, interactive=True)
+
+
+def _exe_main_raising(monkeypatch, exc):
+    from vs200steer import app
+
+    paused = []
+
+    def boom(argv=None):
+        raise exc
+
+    monkeypatch.setattr(app, "main", boom)
+    monkeypatch.setattr(app.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(app, "_interactive", lambda: True)
+    return app.exe_main([], pause=paused.append), paused
+
+
+def test_exe_keeps_the_window_open_when_startup_crashes(monkeypatch, capsys):
+    rc, paused = _exe_main_raising(monkeypatch, PermissionError("APPDATA is read-only"))
+    assert rc == 1 and paused
+    assert "APPDATA is read-only" in capsys.readouterr().err
+
+
+def test_exe_keeps_the_window_open_after_a_bad_argument(monkeypatch):
+    rc, paused = _exe_main_raising(monkeypatch, SystemExit(2))
+    assert rc == 2 and paused
+
+
+def test_exe_closes_after_version(monkeypatch):
+    rc, paused = _exe_main_raising(monkeypatch, SystemExit(0))
+    assert rc == 0 and not paused
+
+
+def test_check_fails_when_bluetooth_or_mdns_cannot_start(monkeypatch, capsys):
+    from vs200steer import app
+
+    async def broken():
+        raise OSError("winrt projection missing")
+
+    monkeypatch.setattr(app, "_smoke_runtime", broken)
+    assert app.main(["--check"]) == 1
+    assert "winrt projection missing" in capsys.readouterr().out

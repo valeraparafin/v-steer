@@ -13,7 +13,7 @@ Your other VS200 keeps shifting through the trainer as before.
 
 1. Download `vs200-steer.exe` from [Releases](https://github.com/valeraparafin/vs200-steer/releases/latest).
 2. Run it. If Windows says it protected your PC, click **More info → Run anyway**.
-3. If Windows Firewall asks, click **Allow** (tick both Private and Public networks).
+3. If Windows Firewall asks, click **Allow** (Private networks is enough).
 4. Wake the steering VS200 and press any button on it. The app remembers this remote.
 5. In Zwift: **Paired Devices → Controls** → pick **KICKR BIKE PRO 1337**.
    Zwift says "Welcome to steering".
@@ -40,9 +40,10 @@ Open `%APPDATA%\vs200-steer\config.toml` in Notepad, then restart the app.
 
 ## Troubleshooting
 
-- **Zwift doesn't list KICKR BIKE PRO 1337**: allow vs200-steer in Windows Firewall
-  (Settings → Windows Security → Firewall → Allow an app). Zwift and this PC must be on the same
-  network. With a VPN on, disconnect it or set `[network] address`.
+- **Zwift doesn't list KICKR BIKE PRO 1337**: Windows may treat your home Wi-Fi as a Public
+  network, where the app is blocked. Set it to Private (Settings → Network & internet → your
+  network → Private network). Zwift and this PC must be on the same network. With a VPN on,
+  disconnect it or set `[network] address`.
 - **The remote isn't found**: press a button to wake it (it sleeps after ~30 min). It must not be
   connected to the trainer or another app.
 - **The antivirus deletes the exe**: this is a known false alarm for unsigned Python apps; restore

@@ -9,6 +9,7 @@ import importlib
 import logging
 import logging.handlers
 import sys
+import traceback
 from ctypes import wintypes
 from pathlib import Path
 
@@ -115,14 +116,29 @@ async def run(cfg: config.Config, cfg_path: Path) -> int:
     return 0
 
 
+async def _smoke_runtime() -> None:
+    """Build (not start) a BLE scanner and an mDNS stack: WinRT and zeroconf load more on first use."""
+    from bleak import BleakScanner
+    from zeroconf.asyncio import AsyncZeroconf
+
+    BleakScanner()
+    zc = AsyncZeroconf(interfaces=["127.0.0.1"])
+    await zc.async_close()
+
+
 def check_runtime() -> int:
-    """Import every lazily loaded dependency: proves an exe build is complete without Bluetooth."""
+    """Load every lazily used dependency: proves an exe build is complete without Bluetooth."""
     missing = []
     for name in RUNTIME_MODULES:
         try:
             importlib.import_module(name)
         except Exception as exc:  # noqa: BLE001 - report every broken module, not just the first
             missing.append(f"{name}: {exc}")
+    if not missing:
+        try:
+            asyncio.run(_smoke_runtime())
+        except Exception as exc:  # noqa: BLE001 - any failure here means the build is broken
+            missing.append(f"runtime: {exc!r}")
     if missing:
         print("vs200-steer check FAILED:")
         for line in missing:
@@ -172,7 +188,13 @@ def _interactive() -> bool:
 
 def exe_main(argv: list[str] | None = None, *, pause=input) -> int:
     """Entry point of the .exe: after an error, keep a double-clicked console window open."""
-    rc = main(argv)
+    try:
+        rc = main(argv)
+    except SystemExit as exc:  # argparse: bad argument (2) or --version/--help (0)
+        rc = exc.code if isinstance(exc.code, int) else int(exc.code is not None)
+    except Exception:  # noqa: BLE001 - startup crash outside main's own handler: show it, then wait
+        traceback.print_exc()
+        rc = 1
     if rc and getattr(sys, "frozen", False) and _interactive():
         try:
             pause("Press Enter to close this window.")
