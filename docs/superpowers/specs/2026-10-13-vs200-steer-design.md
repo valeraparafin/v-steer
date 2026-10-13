@@ -91,13 +91,21 @@ ENABLE 04, WRITE SYNC_RX `RideOn` (reply on SYNC_TX: `RideOn` + `01 03`), then G
 | 1024 | CONTROLLER_INPUT_CONFIG | `{1: 4607, 2: 0}` (digital only) |
 | 771 | BATTERY_STATE | `{1: 0, 2: 100, 3: 0, 4: 0}` |
 
-Replies to 0 and 16 were verified. Unanswered 1024/771 coincided with Zwift reconnecting
-every ~20–80 s; replying to them is expected to stop that — **verify in milestone 1**.
+All four replies were verified (milestone 1, 2026-10-13): Zwift asks for each page once per
+session and does not repeat. They did **not** stop the periodic reconnects — the cause was the
+keepalive interval (below).
 
 **Steering = D-pad** (verified: rider moves sideways). Frame on ASYNC:
 `23 08 <varint buttonMap>`, active-low. Left `2308feffffff0f`, right `2308fbffffff0f`,
 released `2308ffffffff0f`. A pulse re-sends the pressed frame every 50 ms for `pulse_ms`
-(default 200), then sends released. Keepalive: released frame every 20 s while idle.
+(default 200), then sends released. Keepalive: released frame every **5 s** while idle.
+Zwift drops an idle DirCon controller after ~20 s: with a 20 s keepalive it reconnected every
+20 s (each reconnect ~0.25 s, taps in that window are dropped); with 5 s (BikeControl's value)
+one session held for the whole 75 s live probe on 2026-10-13.
+
+**Milestone 1 ride (2026-10-13, author's PC):** first-run pick, auto-pairing in Zwift, steering
+both ways — 154 taps, 0 dropped, 0 errors, clean Ctrl+C. Not yet exercised on a ride: VS200
+sleep/wake and Zwift restart (covered by unit tests only).
 Analog paddle frames were accepted on the wire but did not steer; not used.
 
 ## Behaviour and error handling
