@@ -41,15 +41,19 @@ def default_path() -> Path:
     return _appdata() / APP_DIR_NAME / "config.toml"
 
 
-def migrate_legacy_dir(appdata: Path | None = None) -> Path | None:
-    """Move the pre-rename settings folder to the new name once; return the old path if moved."""
+def migrate_legacy_config(appdata: Path | None = None) -> Path | None:
+    """Move config.toml from the pre-rename folder if the new folder has none; return the old path.
+
+    Only the config moves: it is never held open, unlike the old logs, which stay behind.
+    """
     appdata = appdata or _appdata()
-    old, new = appdata / LEGACY_DIR_NAME, appdata / APP_DIR_NAME
-    if not old.is_dir() or new.exists():
+    old, new = appdata / LEGACY_DIR_NAME / "config.toml", appdata / APP_DIR_NAME / "config.toml"
+    if not old.is_file() or new.exists():
         return None
     try:
-        old.rename(new)
-    except OSError:  # e.g. an old copy still running holds its log open: start fresh instead
+        new.parent.mkdir(parents=True, exist_ok=True)
+        old.replace(new)
+    except OSError:  # unexpected lock or permissions: start with fresh settings rather than fail
         return None
     return old
 

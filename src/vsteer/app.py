@@ -31,6 +31,7 @@ RUNTIME_MODULES = (
     "zeroconf.asyncio",
     "ifaddr",
 )
+LEGACY_MUTEX = "Local\\vs200-steer"  # the app's mutex before the rename to V-Steer
 _ERROR_ALREADY_EXISTS = 183
 _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 _kernel32.CreateMutexW.restype = wintypes.HANDLE
@@ -50,6 +51,15 @@ def acquire_single_instance(name: str = "Local\\v-steer") -> int | None:
 
 def release_single_instance(handle: int) -> None:
     _kernel32.CloseHandle(handle)
+
+
+def legacy_instance_running(name: str = LEGACY_MUTEX) -> bool:
+    """Is a pre-rename vs200-steer running? It uses another mutex name, so the normal check misses it."""
+    handle = acquire_single_instance(name)
+    if handle is None:
+        return True
+    release_single_instance(handle)
+    return False
 
 
 def should_hint(state: EmulatorState, elapsed_s: float, hinted: bool) -> bool:
@@ -172,17 +182,21 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.check:
         return check_runtime()
-    moved_from = None if args.config else config.migrate_legacy_dir()
+    if legacy_instance_running():
+        # Plain print: the log file lives in the settings folder, which is not set up yet.
+        print("An older vs200-steer is still running. Close its window, then start V-Steer again.")
+        return 1
     cfg_path = args.config or config.default_path()
     setup_logging(args.debug, cfg_path.parent / "v-steer.log")
     log.info("V-Steer %s", __version__)
-    if moved_from:
-        log.info("Moved settings from %s to %s", moved_from, cfg_path.parent)
 
     handle = acquire_single_instance()
     if handle is None:
         log.error("V-Steer is already running.")
         return 1
+    moved_from = None if args.config else config.migrate_legacy_config()
+    if moved_from:
+        log.info("Moved settings from %s to %s", moved_from, cfg_path)
     try:
         try:
             cfg = config.load(cfg_path)

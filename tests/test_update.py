@@ -32,3 +32,21 @@ async def test_stays_quiet_offline():
         raise OSError("no network")
 
     assert await check_for_update("0.1.0", fetch=offline) is None
+
+
+def test_exit_does_not_wait_for_a_slow_network():
+    import asyncio
+    import time
+
+    def slow():
+        time.sleep(2)
+        return "v9.9.9"
+
+    async def ride_then_stop():
+        task = asyncio.create_task(check_for_update("0.1.0", fetch=slow))
+        await asyncio.sleep(0.05)
+        task.cancel()
+
+    started = time.monotonic()
+    asyncio.run(ride_then_stop())
+    assert time.monotonic() - started < 1

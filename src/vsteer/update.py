@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 import urllib.request
 from collections.abc import Callable
 
@@ -43,8 +44,31 @@ def fetch_latest_tag(timeout: float = 5.0) -> str:
 
 async def check_for_update(current: str = __version__, *, fetch: Callable[[], str] = fetch_latest_tag) -> str | None:
     """The newer release tag, or None when up to date, offline or GitHub misbehaves."""
+    loop = asyncio.get_running_loop()
+    done: asyncio.Future[str] = loop.create_future()
+
+    def settle(result: str | None, error: BaseException | None) -> None:
+        if done.done():  # cancelled because the app is stopping
+            return
+        if error is None:
+            done.set_result(result)
+        else:
+            done.set_exception(error)
+
+    def work() -> None:
+        try:
+            result, error = fetch(), None
+        except Exception as exc:  # noqa: BLE001 - handed to the awaiting coroutine
+            result, error = None, exc
+        try:
+            loop.call_soon_threadsafe(settle, result, error)
+        except RuntimeError:  # the loop already closed: nobody is waiting any more
+            pass
+
+    # A daemon thread, not asyncio.to_thread: stopping the app must not wait out a slow network.
+    threading.Thread(target=work, name="update-check", daemon=True).start()
     try:
-        tag = await asyncio.to_thread(fetch)
+        tag = await done
     except Exception as exc:  # noqa: BLE001 - no network, rate limit, bad JSON: just skip the check
         log.debug("update check skipped: %s", exc)
         return None

@@ -72,44 +72,61 @@ def test_section_must_be_a_table(tmp_path):
         load(path)
 
 
-def test_old_settings_folder_moves_to_the_new_name(tmp_path):
-    from vsteer.config import migrate_legacy_dir
-
-    old = tmp_path / "vs200-steer"
+def _old_config(appdata):
+    old = appdata / "vs200-steer"
     old.mkdir()
     (old / "config.toml").write_text('[vs200]\naddress = "D3:F7:DD:C8:6A:69"\n', encoding="utf-8")
-    assert migrate_legacy_dir(tmp_path) == old
-    assert not old.exists()
+    (old / "vs200-steer.log").write_text("old log", encoding="utf-8")
+    return old
+
+
+def test_old_settings_move_to_the_new_folder(tmp_path):
+    from vsteer.config import migrate_legacy_config
+
+    old = _old_config(tmp_path)
+    assert migrate_legacy_config(tmp_path) == old / "config.toml"
     assert "D3:F7:DD:C8:6A:69" in (tmp_path / "V-Steer" / "config.toml").read_text(encoding="utf-8")
+    assert not (tmp_path / "V-Steer" / "vs200-steer.log").exists()  # old logs stay behind
 
 
-def test_existing_new_folder_is_left_alone(tmp_path):
-    from vsteer.config import migrate_legacy_dir
+def test_settings_move_even_if_the_new_folder_already_has_a_log(tmp_path):
+    from vsteer.config import migrate_legacy_config
 
-    (tmp_path / "vs200-steer").mkdir()
+    _old_config(tmp_path)
     (tmp_path / "V-Steer").mkdir()
-    assert migrate_legacy_dir(tmp_path) is None
-    assert (tmp_path / "vs200-steer").exists()
+    (tmp_path / "V-Steer" / "v-steer.log").write_text("", encoding="utf-8")
+    assert migrate_legacy_config(tmp_path) is not None
+    assert (tmp_path / "V-Steer" / "config.toml").exists()
+
+
+def test_existing_new_settings_are_left_alone(tmp_path):
+    from vsteer.config import migrate_legacy_config
+
+    _old_config(tmp_path)
+    (tmp_path / "V-Steer").mkdir()
+    (tmp_path / "V-Steer" / "config.toml").write_text("[vs200]\nswap = true\n", encoding="utf-8")
+    assert migrate_legacy_config(tmp_path) is None
+    assert "swap = true" in (tmp_path / "V-Steer" / "config.toml").read_text(encoding="utf-8")
 
 
 def test_nothing_to_move_on_a_fresh_pc(tmp_path):
-    from vsteer.config import migrate_legacy_dir
+    from vsteer.config import migrate_legacy_config
 
-    assert migrate_legacy_dir(tmp_path) is None
+    assert migrate_legacy_config(tmp_path) is None
 
 
-def test_a_locked_old_folder_does_not_stop_the_app(tmp_path, monkeypatch):
+def test_a_failed_move_does_not_stop_the_app(tmp_path, monkeypatch):
     from pathlib import Path
 
-    from vsteer.config import migrate_legacy_dir
+    from vsteer.config import migrate_legacy_config
 
-    (tmp_path / "vs200-steer").mkdir()
+    _old_config(tmp_path)
 
     def locked(self, target):
         raise PermissionError("in use")
 
-    monkeypatch.setattr(Path, "rename", locked)
-    assert migrate_legacy_dir(tmp_path) is None
+    monkeypatch.setattr(Path, "replace", locked)
+    assert migrate_legacy_config(tmp_path) is None
 
 
 def test_default_path_uses_the_new_folder(monkeypatch, tmp_path):
