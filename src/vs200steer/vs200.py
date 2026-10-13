@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from enum import Enum
-from typing import Callable
 
 from .events import Tap
 
@@ -87,15 +87,15 @@ async def pick_remote(timeout: float = 120.0, *, scan=None, client_factory=None)
             if not chosen.done():
                 try:
                     await asyncio.wait_for(asyncio.shield(chosen), min(1.0, max(0.0, deadline - loop.time())))
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass
         return chosen.result() if chosen.done() else None
     finally:
         for client in clients:
             try:
                 await client.disconnect()
-            except Exception:  # noqa: BLE001 - best effort
-                pass
+            except Exception as exc:  # noqa: BLE001 - best effort
+                log.debug("disconnect during pick failed: %s", exc)
 
 
 class Vs200Input:
@@ -140,7 +140,11 @@ class Vs200Input:
                 continue
             delay = self.retry_s
             disconnected = asyncio.Event()
-            client = self._client_factory(device, disconnected_callback=lambda _c: disconnected.set())
+            # Bind this link's own event: Windows may report an old link's disconnect late,
+            # and that must not tear down the link made after it.
+            client = self._client_factory(
+                device, disconnected_callback=lambda _c, link_down=disconnected: link_down.set()
+            )
             try:
                 await client.connect()
                 await client.start_notify(FEA1_UUID, self._on_notify)
@@ -151,6 +155,6 @@ class Vs200Input:
             finally:
                 try:
                     await client.disconnect()
-                except Exception:  # noqa: BLE001 - already gone
-                    pass
+                except Exception as exc:  # noqa: BLE001 - already gone
+                    log.debug("VS200 disconnect failed: %s", exc)
             await asyncio.sleep(self.retry_s)
