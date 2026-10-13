@@ -250,3 +250,9 @@ async def test_failed_start_cleans_up():
         await emulator.start()
     assert emulator.state is EmulatorState.STOPPED
     assert emulator._zeroconf is None and emulator._server is None
+
+
+def test_default_keepalive_beats_zwifts_idle_timeout():
+    # Live probe 2026-10-13: Zwift drops an idle DirCon controller after ~20 s; with a 20 s keepalive it
+    # reconnected every 20 s, with 5 s (BikeControl's interval) one session held for 75 s.
+    assert RideEmulator("127.0.0.1").keepalive_s <= 5.0

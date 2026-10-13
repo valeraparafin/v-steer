@@ -28,7 +28,7 @@ class EmulatorState(Enum):
 
 class RideEmulator:
     def __init__(self, address: str, port: int = 36866, device_name: str = P.DEFAULT_DEVICE_NAME, *,
-                 advertise: bool = True, keepalive_s: float = 20.0, repeat_s: float = 0.05,
+                 advertise: bool = True, keepalive_s: float = 5.0, repeat_s: float = 0.05,
                  gap_s: float = 0.05) -> None:
         self.address = address
         self.port = port
