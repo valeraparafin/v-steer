@@ -41,3 +41,32 @@ def test_swap_must_be_boolean(tmp_path):
     path.write_text('[vs200]\nswap = "yes"\n', encoding="utf-8")
     with pytest.raises(ConfigError, match="vs200.swap"):
         load(path)
+
+
+@pytest.mark.parametrize("value", ['"192.168.1.10:36866"', '"192.168.1"', '"lan"'])
+def test_network_address_must_be_ipv4(tmp_path, value):
+    path = tmp_path / "config.toml"
+    path.write_text(f"[network]\naddress = {value}\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="network.address"):
+        load(path)
+
+
+def test_valid_network_address_accepted(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text('[network]\naddress = "192.168.1.140"\n', encoding="utf-8")
+    assert load(path).network_address == "192.168.1.140"
+
+
+@pytest.mark.parametrize("value", ['""', '"' + "x" * 64 + '"'])
+def test_device_name_must_fit_mdns(tmp_path, value):
+    path = tmp_path / "config.toml"
+    path.write_text(f"[zwift]\ndevice_name = {value}\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="zwift.device_name"):
+        load(path)
+
+
+def test_section_must_be_a_table(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text("steer = 300\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match=r"\[steer\]"):
+        load(path)

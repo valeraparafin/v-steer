@@ -71,7 +71,13 @@ async def pick_remote(timeout: float = 120.0, *, scan=None, client_factory=None)
 
     try:
         while not chosen.done() and loop.time() < deadline:
-            for device in await scan(5.0):
+            try:
+                devices = await scan(5.0)
+            except Exception as exc:  # noqa: BLE001 - radio off / scanner hiccup: retry until the deadline
+                log.warning("Bluetooth scan failed: %s - is Bluetooth on? Retrying", exc)
+                await asyncio.sleep(1.0)
+                continue
+            for device in devices:
                 if device.address in seen:
                     continue
                 seen.add(device.address)
@@ -133,7 +139,11 @@ class Vs200Input:
         delay = self.retry_s
         while True:
             self._set_state(InputState.SEARCHING)
-            device = await self._find(self.address, 10.0)
+            try:
+                device = await self._find(self.address, 10.0)
+            except Exception as exc:  # noqa: BLE001 - radio off / scanner hiccup must not end the ride
+                log.warning("Bluetooth scan failed: %s - is Bluetooth on? Retrying", exc)
+                device = None
             if device is None:
                 await asyncio.sleep(delay)  # asleep or out of range: press a button to wake it
                 delay = min(delay * 2, self.max_retry_s)
@@ -150,7 +160,7 @@ class Vs200Input:
                 await client.start_notify(FEA1_UUID, self._on_notify)
                 self._set_state(InputState.CONNECTED)
                 await disconnected.wait()
-            except _BLE_ERRORS as exc:
+            except Exception as exc:  # noqa: BLE001 - any BLE failure means: search again
                 log.info("VS200 connection failed: %s", exc)
             finally:
                 try:

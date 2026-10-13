@@ -91,8 +91,13 @@ class RideEmulator:
         if self._server is None:
             raise last_error or OSError("no free DirCon port")
         self.bound_port = self._server.sockets[0].getsockname()[1]
-        if self.advertise:
-            await self._advertise()
+        try:
+            if self.advertise:
+                await self._advertise()
+        except BaseException:
+            # Bad address, name clashes or Ctrl+C during the mDNS probe: release the port and mDNS.
+            await self.stop()
+            raise
         self._keepalive_task = asyncio.create_task(self._keepalive_loop())
         self._refresh_state()
 

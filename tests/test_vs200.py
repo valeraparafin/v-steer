@@ -107,3 +107,44 @@ async def test_late_disconnect_of_old_link_does_not_drop_the_new_one():
     assert len(FakeClient.instances) == 2 and vs.state is InputState.CONNECTED
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_scanner_errors_are_retried_not_fatal():
+    from bleak.exc import BleakError
+
+    FakeClient.instances = []
+    calls = {"n": 0}
+
+    async def find_device(address, timeout):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise BleakError("Failed to start scanner. Is Bluetooth turned on?")
+        return SimpleNamespace(address="AA")
+
+    taps = []
+    vs = Vs200Input("AA", taps.append, find_device=find_device, client_factory=FakeClient,
+                    retry_s=0.01, max_retry_s=0.02)
+    task = asyncio.create_task(vs.run())
+    await until(lambda: vs.state is InputState.CONNECTED)
+    FakeClient.instances[0].press("f3050301fc")
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+    assert taps == [Tap.RIGHT]
+
+
+async def test_pick_remote_survives_a_scanner_error():
+    from bleak.exc import BleakError
+
+    FakeClient.instances = []
+    calls = {"n": 0}
+
+    async def scan(timeout):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise BleakError("Bluetooth adapter not available")
+        return [SimpleNamespace(name="Think VS01-1", address="A1")]
+
+    task = asyncio.create_task(pick_remote(5.0, scan=scan, client_factory=FakeClient))
+    await until(lambda: FakeClient.instances and FakeClient.instances[0].handler, timeout=3.0)
+    FakeClient.instances[0].press("f3050301fc")
+    assert await asyncio.wait_for(task, 3.0) == "A1"

@@ -28,3 +28,15 @@ def test_hint_only_once_after_60s_while_unpaired():
 def test_format_status():
     s = Status(vs200=InputState.CONNECTED, zwift=EmulatorState.READY, vs200_address="D3:F7")
     assert format_status(s) == "VS200 D3:F7: connected | Zwift: ready"
+
+
+def test_unexpected_error_is_reported_not_raised(tmp_path, monkeypatch):
+    from vs200steer import app
+
+    async def boom(cfg, cfg_path):
+        raise RuntimeError("bluetooth stack exploded")
+
+    monkeypatch.setattr(app, "run", boom)
+    monkeypatch.setattr(app, "acquire_single_instance", lambda name="x": 1)
+    monkeypatch.setattr(app, "release_single_instance", lambda handle: None)
+    assert app.main(["--config", str(tmp_path / "config.toml")]) == 1

@@ -127,5 +127,8 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         log.info("Stopped.")
         return 0
+    except Exception:
+        log.exception("vs200-steer stopped on an unexpected error (details in %s)", cfg_path.parent / "vs200-steer.log")
+        return 1
     finally:
         release_single_instance(handle)

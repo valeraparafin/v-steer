@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import tomllib
@@ -11,6 +12,7 @@ from pathlib import Path
 from .zwift.protocol import DEFAULT_DEVICE_NAME
 
 PULSE_MIN_MS, PULSE_MAX_MS = 50, 2000
+MDNS_NAME_MAX_BYTES = 63  # one DNS label
 
 
 @dataclass
@@ -63,7 +65,10 @@ def save(cfg: Config, path: Path) -> None:
 
 
 def _get(data: dict, section: str, key: str, kind: type, default, path: Path):
-    value = data.get(section, {}).get(key, default)
+    table = data.get(section, {})
+    if not isinstance(table, dict):
+        raise ConfigError(f"{path}: [{section}] must be a section, got {section} = {table!r}")
+    value = table.get(key, default)
     if kind is int and isinstance(value, bool) or not isinstance(value, kind):
         raise ConfigError(f"{path}: {section}.{key} must be {kind.__name__}, got {value!r}")
     return value
@@ -88,4 +93,16 @@ def load(path: Path) -> Config:
     )
     if not PULSE_MIN_MS <= cfg.pulse_ms <= PULSE_MAX_MS:
         raise ConfigError(f"{path}: steer.pulse_ms must be {PULSE_MIN_MS}..{PULSE_MAX_MS}, got {cfg.pulse_ms}")
+    if not 1 <= len(cfg.device_name.encode("utf-8")) <= MDNS_NAME_MAX_BYTES:
+        raise ConfigError(
+            f"{path}: zwift.device_name must be 1..{MDNS_NAME_MAX_BYTES} bytes, got {cfg.device_name!r}"
+        )
+    if cfg.network_address:
+        try:
+            ipaddress.IPv4Address(cfg.network_address)
+        except ValueError as exc:
+            raise ConfigError(
+                f"{path}: network.address must be an IPv4 address like 192.168.1.10 (no port), "
+                f"got {cfg.network_address!r}"
+            ) from exc
     return cfg

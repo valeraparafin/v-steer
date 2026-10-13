@@ -242,3 +242,11 @@ async def test_keepalive_sends_released_frame_when_idle():
     assert seen_released
     await z.close()
     await emulator.stop()
+
+
+async def test_failed_start_cleans_up():
+    emulator = RideEmulator("999.1.1.1", port=0, advertise=True, keepalive_s=3600)
+    with pytest.raises(OSError):
+        await emulator.start()
+    assert emulator.state is EmulatorState.STOPPED
+    assert emulator._zeroconf is None and emulator._server is None
