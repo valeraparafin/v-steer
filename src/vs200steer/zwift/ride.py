@@ -6,8 +6,8 @@ import asyncio
 import logging
 import math
 import socket
+from collections.abc import Callable
 from enum import Enum
-from typing import Callable
 
 from ..events import Tap
 from . import dircon
@@ -134,8 +134,8 @@ class RideEmulator:
             if self._service_info:
                 try:
                     await self._zeroconf.async_unregister_service(self._service_info)
-                except Exception:  # noqa: BLE001 - teardown must not raise
-                    pass
+                except Exception as exc:  # noqa: BLE001 - teardown must not raise
+                    log.debug("mDNS unregister failed: %s", exc)
             await self._zeroconf.async_close()
             self._zeroconf = None
             self._service_info = None

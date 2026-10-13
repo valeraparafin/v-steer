@@ -4,8 +4,8 @@ import pytest
 
 from vs200steer.events import Tap
 from vs200steer.zwift import dircon
-from vs200steer.zwift import ride as ride_module
 from vs200steer.zwift import protocol as P
+from vs200steer.zwift import ride as ride_module
 from vs200steer.zwift.ride import EmulatorState, RideEmulator
 
 DISCOVER_CHARACTERISTICS_GOLDEN = (
@@ -44,7 +44,7 @@ class FakeZwift:
         while True:
             try:
                 packets.append(await self.recv(timeout=quiet))
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return packets
 
     async def session(self):

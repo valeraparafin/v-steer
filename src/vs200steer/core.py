@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, replace
-from typing import Callable
 
 from .config import Config
 from .events import Tap
