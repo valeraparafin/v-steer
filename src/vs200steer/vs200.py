@@ -75,7 +75,7 @@ async def pick_remote(timeout: float = 120.0, *, scan=None, client_factory=None)
                 if device.address in seen:
                     continue
                 seen.add(device.address)
-                log.info("Found %s (%s) — press a button on it to use it", device.name, device.address)
+                log.info("Found %s (%s) - press a button on it to use it", device.name, device.address)
                 client = client_factory(device, disconnected_callback=lambda _c: None)
                 try:
                     await client.connect()
