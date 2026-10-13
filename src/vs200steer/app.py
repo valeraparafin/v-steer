@@ -1,12 +1,14 @@
-"""Entry point: python -m vs200steer [--debug] [--config PATH]."""
+"""Entry point: python -m vs200steer [--debug] [--config PATH] [--check] [--version]."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
 import ctypes
+import importlib
 import logging
 import logging.handlers
+import sys
 from ctypes import wintypes
 from pathlib import Path
 
@@ -19,6 +21,15 @@ from .zwift.ride import EmulatorState, RideEmulator
 log = logging.getLogger("vs200steer")
 
 HINT_AFTER_S = 60
+# Loaded lazily at runtime, so a frozen build can miss them; --check imports them up front.
+RUNTIME_MODULES = (
+    "bleak",
+    "bleak.backends.winrt.scanner",
+    "bleak.backends.winrt.client",
+    "zeroconf",
+    "zeroconf.asyncio",
+    "ifaddr",
+)
 _ERROR_ALREADY_EXISTS = 183
 _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 _kernel32.CreateMutexW.restype = wintypes.HANDLE
@@ -104,11 +115,32 @@ async def run(cfg: config.Config, cfg_path: Path) -> int:
     return 0
 
 
+def check_runtime() -> int:
+    """Import every lazily loaded dependency: proves an exe build is complete without Bluetooth."""
+    missing = []
+    for name in RUNTIME_MODULES:
+        try:
+            importlib.import_module(name)
+        except Exception as exc:  # noqa: BLE001 - report every broken module, not just the first
+            missing.append(f"{name}: {exc}")
+    if missing:
+        print("vs200-steer check FAILED:")
+        for line in missing:
+            print(f"  {line}")
+        return 1
+    print(f"vs200-steer {__version__} check OK")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="vs200-steer", description="Steer in Zwift with a ThinkRider VS200.")
     parser.add_argument("--debug", action="store_true", help="log the full DirCon traffic")
     parser.add_argument("--config", type=Path, default=None, help="config file path")
+    parser.add_argument("--check", action="store_true", help="check that Bluetooth and mDNS modules load, then exit")
+    parser.add_argument("--version", action="version", version=f"vs200-steer {__version__}")
     args = parser.parse_args(argv)
+    if args.check:
+        return check_runtime()
     cfg_path = args.config or config.default_path()
     setup_logging(args.debug, cfg_path.parent / "vs200-steer.log")
     log.info("vs200-steer %s", __version__)
@@ -132,3 +164,18 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     finally:
         release_single_instance(handle)
+
+
+def _interactive() -> bool:
+    return sys.stdin is not None and sys.stdin.isatty()
+
+
+def exe_main(argv: list[str] | None = None, *, pause=input) -> int:
+    """Entry point of the .exe: after an error, keep a double-clicked console window open."""
+    rc = main(argv)
+    if rc and getattr(sys, "frozen", False) and _interactive():
+        try:
+            pause("Press Enter to close this window.")
+        except (EOFError, KeyboardInterrupt):
+            pass
+    return rc
