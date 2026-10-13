@@ -28,8 +28,29 @@ class ConfigError(Exception):
     pass
 
 
+APP_DIR_NAME = "V-Steer"
+LEGACY_DIR_NAME = "vs200-steer"  # the app's name before v0.1.0
+
+
+def _appdata() -> Path:
+    return Path(os.environ.get("APPDATA", str(Path.home())))
+
+
 def default_path() -> Path:
-    return Path(os.environ.get("APPDATA", str(Path.home()))) / "V-Steer" / "config.toml"
+    return _appdata() / APP_DIR_NAME / "config.toml"
+
+
+def migrate_legacy_dir(appdata: Path | None = None) -> Path | None:
+    """Move the pre-rename settings folder to the new name once; return the old path if moved."""
+    appdata = appdata or _appdata()
+    old, new = appdata / LEGACY_DIR_NAME, appdata / APP_DIR_NAME
+    if not old.is_dir() or new.exists():
+        return None
+    try:
+        old.rename(new)
+    except OSError:  # e.g. an old copy still running holds its log open: start fresh instead
+        return None
+    return old
 
 
 _TEMPLATE = """\

@@ -157,9 +157,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.check:
         return check_runtime()
+    moved_from = None if args.config else config.migrate_legacy_dir()
     cfg_path = args.config or config.default_path()
     setup_logging(args.debug, cfg_path.parent / "v-steer.log")
     log.info("V-Steer %s", __version__)
+    if moved_from:
+        log.info("Moved settings from %s to %s", moved_from, cfg_path.parent)
 
     handle = acquire_single_instance()
     if handle is None:

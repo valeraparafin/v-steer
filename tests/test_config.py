@@ -70,3 +70,50 @@ def test_section_must_be_a_table(tmp_path):
     path.write_text("steer = 300\n", encoding="utf-8")
     with pytest.raises(ConfigError, match=r"\[steer\]"):
         load(path)
+
+
+def test_old_settings_folder_moves_to_the_new_name(tmp_path):
+    from vsteer.config import migrate_legacy_dir
+
+    old = tmp_path / "vs200-steer"
+    old.mkdir()
+    (old / "config.toml").write_text('[vs200]\naddress = "D3:F7:DD:C8:6A:69"\n', encoding="utf-8")
+    assert migrate_legacy_dir(tmp_path) == old
+    assert not old.exists()
+    assert "D3:F7:DD:C8:6A:69" in (tmp_path / "V-Steer" / "config.toml").read_text(encoding="utf-8")
+
+
+def test_existing_new_folder_is_left_alone(tmp_path):
+    from vsteer.config import migrate_legacy_dir
+
+    (tmp_path / "vs200-steer").mkdir()
+    (tmp_path / "V-Steer").mkdir()
+    assert migrate_legacy_dir(tmp_path) is None
+    assert (tmp_path / "vs200-steer").exists()
+
+
+def test_nothing_to_move_on_a_fresh_pc(tmp_path):
+    from vsteer.config import migrate_legacy_dir
+
+    assert migrate_legacy_dir(tmp_path) is None
+
+
+def test_a_locked_old_folder_does_not_stop_the_app(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from vsteer.config import migrate_legacy_dir
+
+    (tmp_path / "vs200-steer").mkdir()
+
+    def locked(self, target):
+        raise PermissionError("in use")
+
+    monkeypatch.setattr(Path, "rename", locked)
+    assert migrate_legacy_dir(tmp_path) is None
+
+
+def test_default_path_uses_the_new_folder(monkeypatch, tmp_path):
+    from vsteer.config import default_path
+
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    assert default_path() == tmp_path / "V-Steer" / "config.toml"
