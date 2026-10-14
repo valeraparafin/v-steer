@@ -83,14 +83,32 @@ announce the new version on their next start.
 2. **Tag:** type `v0.1.2` (the same number as `__version__`, with the `v`) → *Create new tag*.
    **Target:** `main`.
 3. **Title:** `V-Steer v0.1.2`. **Generate release notes**, edit the text if you like.
-4. **Publish release.** CI attaches `V-Steer.exe` in about 5 minutes (progress under **Actions**).
+4. Choose **Pre-release**, then **Publish release**. (A pre-release is not announced to running
+   copies yet: the exe is not attached for the first few minutes.)
+5. Under **Actions** a run for `v0.1.2` starts; after about 5 minutes `V-Steer.exe` is attached to
+   the release.
+6. Edit the release, choose **Latest**, **Update release**. Now running copies announce it.
 
-**2b. Or from a terminal:** `git tag -a v0.1.2 -m "V-Steer v0.1.2"` then `git push origin v0.1.2`.
-CI creates the release with notes from `packaging/release-notes.md` plus the merged PRs.
+This website path has not been used for a V-Steer release yet: if no run starts under **Actions**
+in step 5, delete the release and its tag (see below) and use 2b.
 
-**If the exe does not appear:** open **Actions**, find the red step. Most often the tag and
-`__version__` differ: delete the release and the tag, fix the version, release again. Re-running a
-failed run is safe; it re-uploads the exe to the existing release.
+**2b. Or from a terminal:**
+
+```bat
+git checkout main
+git pull
+git tag -a v0.1.2 -m "V-Steer v0.1.2"
+git push origin v0.1.2
+```
+
+CI creates the release itself, with the exe and the notes from `packaging/release-notes.md` plus the
+merged PRs. Edit the text afterwards if you like.
+
+**If the exe does not appear:** open **Actions** and find the red step. Most often the tag and
+`__version__` differ. Delete the release (**Releases → … → Delete**), then its tag (**Tags** → the
+tag → **Delete**, or `git push origin --delete v0.1.2`): deleting a release keeps its tag. Fix the
+version and release again. Re-running a failed run is safe; it re-uploads the exe to the existing
+release.
 
 ## Icon
 
