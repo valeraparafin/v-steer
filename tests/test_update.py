@@ -13,6 +13,9 @@ from vsteer.update import check_for_update, newer_version
         ("v0.0.9", "0.1.0", None),
         ("nightly", "0.1.0", None),
         ("", "0.1.0", None),
+        ("v0.2", "0.2.0", None),  # #19: same version, written shorter
+        ("v0.2.0", "0.2", None),
+        ("v0.2.1", "0.2", "v0.2.1"),
     ],
 )
 def test_newer_version(latest, current, expected):
