@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import ipaddress
-import json
+import logging
 import os
+import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
 from .zwift.protocol import DEFAULT_DEVICE_NAME
+
+log = logging.getLogger("vsteer")
 
 PULSE_MIN_MS, PULSE_MAX_MS = 50, 2000
 MDNS_NAME_MAX_BYTES = 63  # one DNS label
@@ -77,21 +80,62 @@ check = {check_updates}        # look for a new version on GitHub at start
 """
 
 
+def _toml_str(value: str) -> str:
+    """A TOML basic string. Unlike json.dumps, emoji stay as they are (no surrogate pairs)."""
+    out = []
+    for ch in value:
+        if ch in '"\\':
+            out.append("\\" + ch)
+        elif ord(ch) < 0x20 or ord(ch) == 0x7F:
+            out.append(f"\\u{ord(ch):04x}")
+        else:
+            out.append(ch)
+    return '"' + "".join(out) + '"'
+
+
 def save(cfg: Config, path: Path) -> None:
+    """Write via a temp file and an atomic replace: a crash mid-write keeps the old config."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(
         _TEMPLATE.format(
-            vs200_address=json.dumps(cfg.vs200_address),
+            vs200_address=_toml_str(cfg.vs200_address),
             swap="true" if cfg.swap else "false",
             pulse_ms=cfg.pulse_ms,
             min=PULSE_MIN_MS,
             max=PULSE_MAX_MS,
-            device_name=json.dumps(cfg.device_name),
-            network_address=json.dumps(cfg.network_address),
+            device_name=_toml_str(cfg.device_name),
+            network_address=_toml_str(cfg.network_address),
             check_updates="true" if cfg.check_updates else "false",
         ),
         encoding="utf-8",
     )
+    os.replace(tmp, path)
+
+
+# Every key the template writes: anything else in the file is a typo or left over.
+KNOWN_KEYS = {
+    "vs200": {"address", "swap"},
+    "steer": {"pulse_ms"},
+    "zwift": {"device_name"},
+    "network": {"address"},
+    "updates": {"check"},
+}
+_BLUETOOTH_ADDRESS = re.compile(r"[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}")
+
+
+def _unknown_keys(data: dict) -> list[str]:
+    unknown = []
+    for section, table in data.items():
+        if section not in KNOWN_KEYS:
+            unknown.append(f"[{section}]")
+        elif isinstance(table, dict):
+            unknown += [f"{section}.{key}" for key in table if key not in KNOWN_KEYS[section]]
+    return unknown
+
+
+def _missing_keys(data: dict) -> bool:
+    return any(not isinstance(data.get(s), dict) or not keys <= data[s].keys() for s, keys in KNOWN_KEYS.items())
 
 
 def _get(data: dict, section: str, key: str, kind: type, default, path: Path):
@@ -112,7 +156,10 @@ def load(path: Path) -> Config:
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
     except (tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
-        raise ConfigError(f"{path}: {exc}") from exc
+        raise ConfigError(
+            f"{path}: {exc}. Fix that line in Notepad, or delete config.toml to start over "
+            "(you will pick the remote again)."
+        ) from exc
     defaults = Config()
     cfg = Config(
         vs200_address=_get(data, "vs200", "address", str, defaults.vs200_address, path),
@@ -136,4 +183,19 @@ def load(path: Path) -> Config:
                 f"{path}: network.address must be an IPv4 address like 192.168.1.10 (no port), "
                 f"got {cfg.network_address!r}"
             ) from exc
+    if cfg.vs200_address and not _BLUETOOTH_ADDRESS.fullmatch(cfg.vs200_address):
+        raise ConfigError(
+            f"{path}: vs200.address must look like D3:F7:DD:C8:6A:69 (or \"\" to pick the remote again), "
+            f"got {cfg.vs200_address!r}"
+        )
+    unknown = _unknown_keys(data)
+    for key in unknown:
+        log.warning("%s: unknown setting %s is ignored (typo?)", path, key)
+    # Show settings added by newer versions, but never while a typo is in the file: the rewrite
+    # would delete the line the warning above points at.
+    if _missing_keys(data) and not unknown:
+        try:  # values come from the file or the defaults
+            save(cfg, path)
+        except OSError as exc:
+            log.debug("could not add new settings to %s: %s", path, exc)
     return cfg

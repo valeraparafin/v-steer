@@ -30,6 +30,8 @@ def newer_version(latest_tag: str, current: str) -> str | None:
     latest, mine = _parse(latest_tag), _parse(current)
     if latest is None or mine is None:
         return None
+    width = max(len(latest), len(mine))  # v0.2 and 0.2.0 are the same version
+    latest, mine = latest + (0,) * (width - len(latest)), mine + (0,) * (width - len(mine))
     return latest_tag if latest > mine else None
 
 

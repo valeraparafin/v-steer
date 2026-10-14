@@ -147,3 +147,90 @@ def test_saved_config_keeps_the_update_switch(tmp_path):
     p = tmp_path / "config.toml"
     save(Config(check_updates=False), p)
     assert load(p).check_updates is False
+
+
+@pytest.mark.parametrize("value", ["D3:F7:DD:C8:6A", "D3-F7-DD-C8-6A-69", "D3:F7:DD:C8:6A:6G", "remote"])
+def test_vs200_address_must_be_a_bluetooth_address(tmp_path, value):
+    """#8: a typo in the address would make V-Steer search forever without saying why."""
+    p = tmp_path / "config.toml"
+    p.write_text(f'[vs200]\naddress = "{value}"\n', encoding="utf-8")
+    with pytest.raises(ConfigError, match="vs200.address"):
+        load(p)
+
+
+def test_lowercase_bluetooth_address_is_fine(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text('[vs200]\naddress = "d3:f7:dd:c8:6a:69"\n', encoding="utf-8")
+    assert load(p).vs200_address == "d3:f7:dd:c8:6a:69"
+
+
+def test_unknown_keys_are_reported(tmp_path, caplog):
+    """#8: a typo like pulse_mss must not be ignored silently."""
+    import logging
+
+    p = tmp_path / "config.toml"
+    p.write_text("[steer]\npulse_mss = 300\n[stear]\npulse_ms = 300\n", encoding="utf-8")
+    with caplog.at_level(logging.WARNING, logger="vsteer"):
+        load(p)
+    assert "steer.pulse_mss" in caplog.text and "[stear]" in caplog.text
+
+
+@pytest.mark.parametrize("name", ["KICKR 🚴 BIKE", 'Valera "V" Bike', "back\\slash"])
+def test_any_device_name_survives_save_and_load(tmp_path, name):
+    """#8: emoji were written as JSON surrogate pairs that TOML rejects on the next start."""
+    p = tmp_path / "config.toml"
+    save(Config(device_name=name), p)
+    assert load(p).device_name == name
+
+
+def test_settings_added_in_new_versions_appear_in_an_old_file(tmp_path):
+    """#18: an old config.toml gains the new sections, and keeps the user's values."""
+    p = tmp_path / "config.toml"
+    p.write_text('[vs200]\naddress = "D3:F7:DD:C8:6A:69"\nswap = true\n', encoding="utf-8")
+    load(p)
+    text = p.read_text(encoding="utf-8")
+    assert "[updates]" in text and "check = true" in text
+    cfg = load(p)
+    assert cfg.vs200_address == "D3:F7:DD:C8:6A:69" and cfg.swap is True
+
+
+def test_a_complete_file_is_not_rewritten(tmp_path):
+    p = tmp_path / "config.toml"
+    save(Config(), p)
+    p.write_text(p.read_text(encoding="utf-8") + "# my note\n", encoding="utf-8")
+    load(p)
+    assert "# my note" in p.read_text(encoding="utf-8")
+
+
+def test_new_settings_are_not_added_while_a_typo_is_in_the_file(tmp_path):
+    """Review of #18: the rewrite must not delete the typo the warning just pointed at."""
+    p = tmp_path / "config.toml"
+    p.write_text("[steer]\npulse_mss = 300\n", encoding="utf-8")
+    load(p)
+    assert "pulse_mss = 300" in p.read_text(encoding="utf-8")
+
+
+def test_a_crash_while_saving_keeps_the_old_file(tmp_path, monkeypatch):
+    """Review of #18: the config is now rewritten on start, so a half-written file must not replace it."""
+    from pathlib import Path
+
+    p = tmp_path / "config.toml"
+    p.write_text('[vs200]\naddress = "D3:F7:DD:C8:6A:69"\n', encoding="utf-8")
+    real_write_text = Path.write_text
+
+    def crash_midway(self, data, *args, **kwargs):
+        real_write_text(self, data[:10], *args, **kwargs)
+        raise OSError("power cut")
+
+    monkeypatch.setattr(Path, "write_text", crash_midway)
+    with pytest.raises(OSError):
+        save(Config(swap=True), p)
+    monkeypatch.undo()
+    assert load(p).vs200_address == "D3:F7:DD:C8:6A:69"
+
+
+def test_a_broken_file_error_says_how_to_recover(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text('[zwift]\ndevice_name = "broken\n', encoding="utf-8")
+    with pytest.raises(ConfigError, match="delete"):
+        load(p)
