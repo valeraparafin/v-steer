@@ -33,6 +33,18 @@ def test_hint_counts_from_when_zwift_went_away():
     assert t.update(EmulatorState.ADVERTISING, 160)
 
 
+def test_hint_knows_zwift_had_been_connected():
+    """Review of #9: after a Zwift restart the hint is about re-pairing, not the firewall."""
+    from vsteer.app import HintTimer
+
+    t = HintTimer(after_s=60)
+    t.update(EmulatorState.ADVERTISING, 0)
+    assert t.was_connected is False
+    t.update(EmulatorState.READY, 10)
+    t.update(EmulatorState.ADVERTISING, 20)
+    assert t.was_connected is True
+
+
 def test_format_status():
     s = Status(vs200=InputState.CONNECTED, zwift=EmulatorState.READY, vs200_address="D3:F7")
     assert format_status(s) == "VS200 D3:F7: connected | Zwift: ready"

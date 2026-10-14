@@ -1,7 +1,7 @@
 # Vendored from ZwiftBridge (https://github.com/amirlagasse/ZwiftBridge),
 # commit 286cf6bd2e2b500e0d83e5b85bdbff65b325a429, src/zwiftbridge/dircon.py.
 # Copyright (c) 2026 Amir Lagasse. MIT License — see NOTICE.
-# Local changes: logger name "zwiftbridge" -> "vsteer"; any ConnectionError/OSError on a client link
+# Local changes: logger name "zwiftbridge" -> "vsteer"; any OSError on a client link
 # (e.g. Windows ConnectionAbortedError) ends that link quietly instead of escaping.
 """DirCon (Wahoo Direct Connect) framing.
 
@@ -209,7 +209,7 @@ class DirconServer:
                     if reply is not None:
                         writer.write(reply.encode())
                         await writer.drain()
-        except (ConnectionError, OSError, asyncio.IncompleteReadError):
+        except (OSError, asyncio.IncompleteReadError):
             pass  # incl. Windows' ConnectionAbortedError (10053) when Zwift drops the link
         finally:
             self.clients.discard(writer)
@@ -287,7 +287,7 @@ class DirconServer:
                 writer.write(data)
                 await writer.drain()
                 sent += 1
-            except (ConnectionError, OSError):  # one dead link must not keep the frame from the others
+            except OSError:  # one dead link must not keep the frame from the others
                 dead.append(writer)
         for writer in dead:
             self.clients.discard(writer)

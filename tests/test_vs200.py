@@ -191,3 +191,37 @@ async def test_pick_remote_disconnects_a_remote_it_could_not_listen_to():
 
     assert await pick_remote(0.3, scan=scan, client_factory=DeafClient) is None
     assert "A1" in disconnected
+
+
+async def test_pick_remote_disconnects_after_any_error():
+    """Review of #7: a non-BLE error type must not leave the remote attached or crash the first run."""
+    disconnected = []
+
+    class OddClient(FakeClient):
+        async def start_notify(self, uuid, handler):
+            raise RuntimeError("winrt said no")
+
+        async def disconnect(self):
+            disconnected.append(self.device.address)
+
+    async def scan(timeout):
+        return [SimpleNamespace(name="Think VS01-1", address="A1")]
+
+    assert await pick_remote(0.3, scan=scan, client_factory=OddClient) is None
+    assert "A1" in disconnected
+
+
+async def test_search_scans_in_short_bursts():
+    """Review of #3: a sleeping remote is searched often, so each scan must be short (adapter time)."""
+    timeouts = []
+
+    async def find_device(address, timeout):
+        timeouts.append(timeout)
+        raise asyncio.CancelledError
+
+    vs = Vs200Input("AA", lambda tap: None, find_device=find_device, client_factory=FakeClient)
+    try:
+        await vs.run()
+    except asyncio.CancelledError:
+        pass
+    assert timeouts and timeouts[0] <= 5.0

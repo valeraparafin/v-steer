@@ -17,13 +17,7 @@ _PACKETS = {
     bytes.fromhex("f3050301fc"): Tap.RIGHT,  # "+" button
     bytes.fromhex("f3050300fb"): Tap.LEFT,   # "-" button
 }
-_BLE_ERRORS: tuple[type[BaseException], ...] = (OSError, asyncio.TimeoutError)
-try:  # bleak is a runtime dependency; tests inject fakes but bleak is installed anyway
-    from bleak.exc import BleakError
-
-    _BLE_ERRORS = (*_BLE_ERRORS, BleakError)
-except ImportError:  # pragma: no cover
-    pass
+SCAN_S = 5.0  # one search burst; a sleeping remote is searched every SCAN_S + retry_s seconds
 
 
 def parse_packet(data: bytes) -> Tap | None:
@@ -87,7 +81,7 @@ async def pick_remote(timeout: float = 120.0, *, scan=None, client_factory=None)
                     await client.connect()
                     await client.start_notify(FEA1_UUID, make_handler(device.address))
                     clients.append(client)
-                except _BLE_ERRORS as exc:
+                except Exception as exc:  # noqa: BLE001 - any failure: release the remote, try the next one
                     log.info("Could not connect to %s: %s", device.address, exc)
                     seen.discard(device.address)
                     try:  # connect() may have worked: do not leave that remote attached to the PC
@@ -142,7 +136,7 @@ class Vs200Input:
         while True:
             self._set_state(InputState.SEARCHING)
             try:
-                device = await self._find(self.address, 10.0)
+                device = await self._find(self.address, SCAN_S)
             except Exception as exc:  # noqa: BLE001 - radio off / scanner hiccup must not end the ride
                 log.warning("Bluetooth scan failed: %s - is Bluetooth on? Retrying", exc)
                 device = None

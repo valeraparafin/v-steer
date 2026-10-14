@@ -69,10 +69,12 @@ class HintTimer:
         self.after_s = after_s
         self._away_since: float | None = None
         self._hinted = False
+        self.was_connected = False  # Zwift had paired before: the hint is about re-pairing, not setup
 
     def update(self, state: EmulatorState, now: float) -> bool:
         if state is not EmulatorState.ADVERTISING:
             self._away_since, self._hinted = None, False
+            self.was_connected = self.was_connected or state is not EmulatorState.STOPPED
             return False
         if self._away_since is None:
             self._away_since = now
@@ -97,7 +99,12 @@ async def _hint_loop(emulator: RideEmulator) -> None:
     loop, timer = asyncio.get_running_loop(), HintTimer()
     while True:
         await asyncio.sleep(5)
-        if timer.update(emulator.state, loop.time()):
+        if not timer.update(emulator.state, loop.time()):
+            continue
+        if timer.was_connected:
+            log.warning("Zwift disconnected. To steer again: in Zwift, Paired Devices -> Controls -> pair '%s'.",
+                        emulator.advertised_name)
+        else:
             log.warning(
                 "Zwift has not connected yet. In Zwift: Paired Devices -> Controls -> pair '%s'. "
                 "If it is not listed: allow V-Steer/Python through Windows Firewall, "

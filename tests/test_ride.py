@@ -325,3 +325,33 @@ async def test_an_aborted_connection_ends_the_client_quietly():
     writer = _Writer()
     await server.handle_client(AbortingReader(), writer)
     assert writer.closed and writer not in server.clients
+
+
+async def test_a_release_alone_is_not_a_delivered_steer(emu, monkeypatch):
+    """Review of #4: Zwift reconnected mid-pulse and only got the release; the rider did not move."""
+    z = await FakeZwift.connect(emu.bound_port)
+    await z.session()
+
+    async def only_release_arrives(char_uuid, value):
+        return 1 if value == P.RELEASED_FRAME else 0
+
+    monkeypatch.setattr(emu.dircon, "notify", only_release_arrives)
+    assert await emu.pulse(Tap.LEFT, 50) is False
+    await z.close()
+
+
+async def test_keepalive_survives_an_unexpected_error(monkeypatch):
+    """Review of #6: a keepalive that dies mid-ride would let Zwift drop the controller every 20 s."""
+    emulator = RideEmulator("127.0.0.1", port=0, advertise=False, keepalive_s=0.01)
+    await emulator.start()
+    z = await FakeZwift.connect(emulator.bound_port)
+    await z.session()
+
+    async def bug(char_uuid, value):
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(emulator, "_send", bug)
+    await asyncio.sleep(0.1)
+    assert not emulator._keepalive_task.done()
+    await z.close()
+    await emulator.stop()
