@@ -55,7 +55,7 @@ async def test_reconnects_after_sleep_and_drop():
         return next(lookups)
 
     vs = Vs200Input("AA", taps.append, states.append, find_device=find_device,
-                    client_factory=FakeClient, retry_s=0.01, max_retry_s=0.02)
+                    client_factory=FakeClient, retry_s=0.01)
     task = asyncio.create_task(vs.run())
     await until(lambda: vs.state is InputState.CONNECTED)
     FakeClient.instances[0].press("f3050301fc")
@@ -97,7 +97,7 @@ async def test_late_disconnect_of_old_link_does_not_drop_the_new_one():
         return SimpleNamespace(address="AA")
 
     vs = Vs200Input("AA", lambda tap: None, find_device=find_device, client_factory=FakeClient,
-                    retry_s=0.01, max_retry_s=0.02)
+                    retry_s=0.01)
     task = asyncio.create_task(vs.run())
     await until(lambda: vs.state is InputState.CONNECTED)
     FakeClient.instances[0].drop()
@@ -123,7 +123,7 @@ async def test_scanner_errors_are_retried_not_fatal():
 
     taps = []
     vs = Vs200Input("AA", taps.append, find_device=find_device, client_factory=FakeClient,
-                    retry_s=0.01, max_retry_s=0.02)
+                    retry_s=0.01)
     task = asyncio.create_task(vs.run())
     await until(lambda: vs.state is InputState.CONNECTED)
     FakeClient.instances[0].press("f3050301fc")
@@ -148,3 +148,46 @@ async def test_pick_remote_survives_a_scanner_error():
     await until(lambda: FakeClient.instances and FakeClient.instances[0].handler, timeout=3.0)
     FakeClient.instances[0].press("f3050301fc")
     assert await asyncio.wait_for(task, 3.0) == "A1"
+
+
+async def test_search_interval_stays_short_while_the_remote_sleeps(monkeypatch):
+    """#3: a press that wakes the remote must be picked up within seconds, not after a long backoff."""
+    from vsteer import vs200 as vs200_module
+
+    delays = []
+    real_sleep = asyncio.sleep
+
+    async def record(delay):
+        delays.append(delay)
+        if len(delays) >= 8:
+            raise asyncio.CancelledError
+        await real_sleep(0)
+
+    async def asleep(address, timeout):
+        return None
+
+    monkeypatch.setattr(vs200_module.asyncio, "sleep", record)
+    vs = Vs200Input("AA", lambda tap: None, find_device=asleep, client_factory=FakeClient)
+    try:
+        await vs.run()
+    except asyncio.CancelledError:
+        pass
+    assert len(delays) == 8 and max(delays) <= 3.0
+
+
+async def test_pick_remote_disconnects_a_remote_it_could_not_listen_to():
+    """#7: connect() worked but start_notify() failed: that remote must not stay connected to the PC."""
+    disconnected = []
+
+    class DeafClient(FakeClient):
+        async def start_notify(self, uuid, handler):
+            raise OSError("notify failed")
+
+        async def disconnect(self):
+            disconnected.append(self.device.address)
+
+    async def scan(timeout):
+        return [SimpleNamespace(name="Think VS01-1", address="A1")]
+
+    assert await pick_remote(0.3, scan=scan, client_factory=DeafClient) is None
+    assert "A1" in disconnected

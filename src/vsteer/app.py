@@ -62,8 +62,24 @@ def legacy_instance_running(name: str = LEGACY_MUTEX) -> bool:
     return False
 
 
-def should_hint(state: EmulatorState, elapsed_s: float, hinted: bool) -> bool:
-    return not hinted and elapsed_s >= HINT_AFTER_S and state is EmulatorState.ADVERTISING
+class HintTimer:
+    """Fires once after Zwift has been away for `after_s`, counted from when it went away."""
+
+    def __init__(self, after_s: float = HINT_AFTER_S) -> None:
+        self.after_s = after_s
+        self._away_since: float | None = None
+        self._hinted = False
+
+    def update(self, state: EmulatorState, now: float) -> bool:
+        if state is not EmulatorState.ADVERTISING:
+            self._away_since, self._hinted = None, False
+            return False
+        if self._away_since is None:
+            self._away_since = now
+        if self._hinted or now - self._away_since < self.after_s:
+            return False
+        self._hinted = True
+        return True
 
 
 def setup_logging(debug: bool, log_path: Path) -> None:
@@ -78,12 +94,10 @@ def setup_logging(debug: bool, log_path: Path) -> None:
 
 
 async def _hint_loop(emulator: RideEmulator) -> None:
-    loop = asyncio.get_running_loop()
-    started, hinted = loop.time(), False
-    while not hinted:
+    loop, timer = asyncio.get_running_loop(), HintTimer()
+    while True:
         await asyncio.sleep(5)
-        if should_hint(emulator.state, loop.time() - started, hinted):
-            hinted = True
+        if timer.update(emulator.state, loop.time()):
             log.warning(
                 "Zwift has not connected yet. In Zwift: Paired Devices -> Controls -> pair '%s'. "
                 "If it is not listed: allow V-Steer/Python through Windows Firewall, "

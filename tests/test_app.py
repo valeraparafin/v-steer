@@ -1,6 +1,6 @@
 import uuid
 
-from vsteer.app import acquire_single_instance, release_single_instance, should_hint
+from vsteer.app import acquire_single_instance, release_single_instance
 from vsteer.core import Status
 from vsteer.ui.console import format_status
 from vsteer.vs200 import InputState
@@ -18,11 +18,19 @@ def test_second_instance_is_refused():
     release_single_instance(again)
 
 
-def test_hint_only_once_after_60s_while_unpaired():
-    assert should_hint(EmulatorState.ADVERTISING, 61, hinted=False) is True
-    assert should_hint(EmulatorState.ADVERTISING, 59, hinted=False) is False
-    assert should_hint(EmulatorState.ADVERTISING, 61, hinted=True) is False
-    assert should_hint(EmulatorState.READY, 61, hinted=False) is False
+def test_hint_counts_from_when_zwift_went_away():
+    """#9: the firewall hint waits 60 s of no Zwift, measured from the disconnect, not from app start."""
+    from vsteer.app import HintTimer
+
+    t = HintTimer(after_s=60)
+    assert not t.update(EmulatorState.ADVERTISING, 0)
+    assert not t.update(EmulatorState.ADVERTISING, 59)
+    assert t.update(EmulatorState.ADVERTISING, 60)
+    assert not t.update(EmulatorState.ADVERTISING, 61)  # once per wait
+    assert not t.update(EmulatorState.READY, 70)
+    assert not t.update(EmulatorState.ADVERTISING, 100)  # Zwift closed at 100 s
+    assert not t.update(EmulatorState.ADVERTISING, 104)  # was: hinted here, 4 s after the close
+    assert t.update(EmulatorState.ADVERTISING, 160)
 
 
 def test_format_status():

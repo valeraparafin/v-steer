@@ -90,6 +90,10 @@ async def pick_remote(timeout: float = 120.0, *, scan=None, client_factory=None)
                 except _BLE_ERRORS as exc:
                     log.info("Could not connect to %s: %s", device.address, exc)
                     seen.discard(device.address)
+                    try:  # connect() may have worked: do not leave that remote attached to the PC
+                        await client.disconnect()
+                    except Exception as disconnect_exc:  # noqa: BLE001 - best effort
+                        log.debug("disconnect after failed pick failed: %s", disconnect_exc)
             if not chosen.done():
                 try:
                     await asyncio.wait_for(asyncio.shield(chosen), min(1.0, max(0.0, deadline - loop.time())))
@@ -107,14 +111,13 @@ async def pick_remote(timeout: float = 120.0, *, scan=None, client_factory=None)
 class Vs200Input:
     def __init__(self, address: str, on_tap: Callable[[Tap], None],
                  on_state: Callable[[InputState], None] | None = None, *, find_device=None,
-                 client_factory=None, retry_s: float = 3.0, max_retry_s: float = 15.0) -> None:
+                 client_factory=None, retry_s: float = 3.0) -> None:
         self.address = address
         self.on_tap = on_tap
         self.on_state = on_state
         self._find = find_device or _bleak_find
         self._client_factory = client_factory or _bleak_client
         self.retry_s = retry_s
-        self.max_retry_s = max_retry_s
         self._state: InputState | None = None
 
     @property
@@ -136,7 +139,6 @@ class Vs200Input:
         self.on_tap(tap)
 
     async def run(self) -> None:
-        delay = self.retry_s
         while True:
             self._set_state(InputState.SEARCHING)
             try:
@@ -145,10 +147,10 @@ class Vs200Input:
                 log.warning("Bluetooth scan failed: %s - is Bluetooth on? Retrying", exc)
                 device = None
             if device is None:
-                await asyncio.sleep(delay)  # asleep or out of range: press a button to wake it
-                delay = min(delay * 2, self.max_retry_s)
+                # Asleep or out of range. Keep the pause short (no backoff): the press that wakes
+                # the remote should steer within seconds.
+                await asyncio.sleep(self.retry_s)
                 continue
-            delay = self.retry_s
             disconnected = asyncio.Event()
             # Bind this link's own event: Windows may report an old link's disconnect late,
             # and that must not tear down the link made after it.
