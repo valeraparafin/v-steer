@@ -66,9 +66,31 @@ GitHub Actions in `.github/workflows` are pinned to commit SHAs; Dependabot prop
 
 ## Release
 
-1. Bump `__version__` in `src/vsteer/__init__.py` and merge to `main`.
-2. Tag and push: `git tag v0.1.1` then `git push origin v0.1.1`.
-3. CI tests, builds the exe, checks the tag matches the version and publishes the GitHub Release.
+A release is made by a `v*` tag; CI does the rest: tests, builds `V-Steer.exe`, checks the tag
+matches `__version__` and attaches the exe to the GitHub Release. Running copies of V-Steer
+announce the new version on their next start.
+
+**1. Bump the version** (website is enough):
+
+1. Open `src/vsteer/__init__.py` on GitHub, click the pencil, change `__version__ = "0.1.1"` to
+   the new number, e.g. `"0.1.2"`.
+2. **Commit changes… → Create a new branch → Propose changes → Create pull request.**
+3. Wait for the `test` and `build` checks, then **Merge**.
+
+**2a. Release from the website:**
+
+1. **Releases → Draft a new release.**
+2. **Tag:** type `v0.1.2` (the same number as `__version__`, with the `v`) → *Create new tag*.
+   **Target:** `main`.
+3. **Title:** `V-Steer v0.1.2`. **Generate release notes**, edit the text if you like.
+4. **Publish release.** CI attaches `V-Steer.exe` in about 5 minutes (progress under **Actions**).
+
+**2b. Or from a terminal:** `git tag -a v0.1.2 -m "V-Steer v0.1.2"` then `git push origin v0.1.2`.
+CI creates the release with notes from `packaging/release-notes.md` plus the merged PRs.
+
+**If the exe does not appear:** open **Actions**, find the red step. Most often the tag and
+`__version__` differ: delete the release and the tag, fix the version, release again. Re-running a
+failed run is safe; it re-uploads the exe to the existing release.
 
 ## Icon
 
