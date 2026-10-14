@@ -200,3 +200,37 @@ def test_a_complete_file_is_not_rewritten(tmp_path):
     p.write_text(p.read_text(encoding="utf-8") + "# my note\n", encoding="utf-8")
     load(p)
     assert "# my note" in p.read_text(encoding="utf-8")
+
+
+def test_new_settings_are_not_added_while_a_typo_is_in_the_file(tmp_path):
+    """Review of #18: the rewrite must not delete the typo the warning just pointed at."""
+    p = tmp_path / "config.toml"
+    p.write_text("[steer]\npulse_mss = 300\n", encoding="utf-8")
+    load(p)
+    assert "pulse_mss = 300" in p.read_text(encoding="utf-8")
+
+
+def test_a_crash_while_saving_keeps_the_old_file(tmp_path, monkeypatch):
+    """Review of #18: the config is now rewritten on start, so a half-written file must not replace it."""
+    from pathlib import Path
+
+    p = tmp_path / "config.toml"
+    p.write_text('[vs200]\naddress = "D3:F7:DD:C8:6A:69"\n', encoding="utf-8")
+    real_write_text = Path.write_text
+
+    def crash_midway(self, data, *args, **kwargs):
+        real_write_text(self, data[:10], *args, **kwargs)
+        raise OSError("power cut")
+
+    monkeypatch.setattr(Path, "write_text", crash_midway)
+    with pytest.raises(OSError):
+        save(Config(swap=True), p)
+    monkeypatch.undo()
+    assert load(p).vs200_address == "D3:F7:DD:C8:6A:69"
+
+
+def test_a_broken_file_error_says_how_to_recover(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text('[zwift]\ndevice_name = "broken\n', encoding="utf-8")
+    with pytest.raises(ConfigError, match="delete"):
+        load(p)

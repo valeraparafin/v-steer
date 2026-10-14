@@ -94,8 +94,10 @@ def _toml_str(value: str) -> str:
 
 
 def save(cfg: Config, path: Path) -> None:
+    """Write via a temp file and an atomic replace: a crash mid-write keeps the old config."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(
         _TEMPLATE.format(
             vs200_address=_toml_str(cfg.vs200_address),
             swap="true" if cfg.swap else "false",
@@ -108,6 +110,7 @@ def save(cfg: Config, path: Path) -> None:
         ),
         encoding="utf-8",
     )
+    os.replace(tmp, path)
 
 
 # Every key the template writes: anything else in the file is a typo or left over.
@@ -153,7 +156,10 @@ def load(path: Path) -> Config:
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
     except (tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
-        raise ConfigError(f"{path}: {exc}") from exc
+        raise ConfigError(
+            f"{path}: {exc}. Fix that line in Notepad, or delete config.toml to start over "
+            "(you will pick the remote again)."
+        ) from exc
     defaults = Config()
     cfg = Config(
         vs200_address=_get(data, "vs200", "address", str, defaults.vs200_address, path),
@@ -182,10 +188,13 @@ def load(path: Path) -> Config:
             f"{path}: vs200.address must look like D3:F7:DD:C8:6A:69 (or \"\" to pick the remote again), "
             f"got {cfg.vs200_address!r}"
         )
-    for key in _unknown_keys(data):
+    unknown = _unknown_keys(data)
+    for key in unknown:
         log.warning("%s: unknown setting %s is ignored (typo?)", path, key)
-    if _missing_keys(data):
-        try:  # show settings added by newer versions; values come from the file or the defaults
+    # Show settings added by newer versions, but never while a typo is in the file: the rewrite
+    # would delete the line the warning above points at.
+    if _missing_keys(data) and not unknown:
+        try:  # values come from the file or the defaults
             save(cfg, path)
         except OSError as exc:
             log.debug("could not add new settings to %s: %s", path, exc)
