@@ -208,7 +208,7 @@ async def test_write_failure_does_not_raise(emu, monkeypatch):
         raise ConnectionAbortedError(10053, "aborted by the host")
 
     monkeypatch.setattr(emu.dircon, "notify", broken_notify)
-    assert await emu.pulse(Tap.LEFT, 50) is True  # attempted while ready; no exception escapes
+    assert await emu.pulse(Tap.LEFT, 50) is False  # nothing reached Zwift; no exception escapes
     await z.close()
 
 
@@ -256,3 +256,102 @@ def test_default_keepalive_beats_zwifts_idle_timeout():
     # Live probe 2026-10-13: Zwift drops an idle DirCon controller after ~20 s; with a 20 s keepalive it
     # reconnected every 20 s, with 5 s (BikeControl's interval) one session held for 75 s.
     assert RideEmulator("127.0.0.1").keepalive_s <= 5.0
+
+
+async def test_pulse_reports_false_when_no_frame_reached_zwift(emu, monkeypatch):
+    """#4: the link dropped mid-pulse, so 'steer' must not be logged as delivered."""
+    z = await FakeZwift.connect(emu.bound_port)
+    await z.session()
+
+    async def nobody_listening(char_uuid, value):
+        return 0
+
+    monkeypatch.setattr(emu.dircon, "notify", nobody_listening)
+    assert await emu.pulse(Tap.LEFT, 50) is False
+    await z.close()
+
+
+async def test_stop_survives_a_crashed_keepalive():
+    """#6: a keepalive that died with an unexpected error must not stop the cleanup (mDNS, port)."""
+    emulator = RideEmulator("127.0.0.1", port=0, advertise=False, keepalive_s=3600)
+    await emulator.start()
+
+    async def crashed():
+        raise RuntimeError("keepalive bug")
+
+    emulator._keepalive_task.cancel()
+    emulator._keepalive_task = asyncio.create_task(crashed())
+    await asyncio.sleep(0)
+    await emulator.stop()
+    assert emulator.state is EmulatorState.STOPPED and emulator._server is None
+
+
+class _Writer:
+    def __init__(self, fail=None):
+        self.fail, self.data, self.closed = fail, b"", False
+
+    def write(self, data):
+        self.data += data
+
+    async def drain(self):
+        if self.fail:
+            raise self.fail
+
+    def close(self):
+        self.closed = True
+
+    def get_extra_info(self, name):
+        return ("127.0.0.1", 1)
+
+
+async def test_notify_reaches_the_new_client_when_the_old_one_aborted():
+    """#5: Windows' ConnectionAbortedError on a dying link must not stop the frame reaching the new link."""
+    server = dircon.DirconServer(dircon.Service(P.RIDE_SERVICE_UUID, []))
+    old, new = _Writer(ConnectionAbortedError(10053, "aborted")), _Writer()
+    for w in (old, new):
+        server.clients.add(w)
+        server.subscriptions[w] = {P.ASYNC_CHAR_UUID}
+    assert await server.notify(P.ASYNC_CHAR_UUID, P.RELEASED_FRAME) == 1
+    assert new.data and old not in server.clients
+
+
+async def test_an_aborted_connection_ends_the_client_quietly():
+    """#5: the client handler must end cleanly, not leave 'Task exception was never retrieved'."""
+    class AbortingReader:
+        async def read(self, n):
+            raise ConnectionAbortedError(10053, "aborted")
+
+    server = dircon.DirconServer(dircon.Service(P.RIDE_SERVICE_UUID, []))
+    writer = _Writer()
+    await server.handle_client(AbortingReader(), writer)
+    assert writer.closed and writer not in server.clients
+
+
+async def test_a_release_alone_is_not_a_delivered_steer(emu, monkeypatch):
+    """Review of #4: Zwift reconnected mid-pulse and only got the release; the rider did not move."""
+    z = await FakeZwift.connect(emu.bound_port)
+    await z.session()
+
+    async def only_release_arrives(char_uuid, value):
+        return 1 if value == P.RELEASED_FRAME else 0
+
+    monkeypatch.setattr(emu.dircon, "notify", only_release_arrives)
+    assert await emu.pulse(Tap.LEFT, 50) is False
+    await z.close()
+
+
+async def test_keepalive_survives_an_unexpected_error(monkeypatch):
+    """Review of #6: a keepalive that dies mid-ride would let Zwift drop the controller every 20 s."""
+    emulator = RideEmulator("127.0.0.1", port=0, advertise=False, keepalive_s=0.01)
+    await emulator.start()
+    z = await FakeZwift.connect(emulator.bound_port)
+    await z.session()
+
+    async def bug(char_uuid, value):
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(emulator, "_send", bug)
+    await asyncio.sleep(0.1)
+    assert not emulator._keepalive_task.done()
+    await z.close()
+    await emulator.stop()

@@ -134,6 +134,8 @@ class RideEmulator:
                 await self._keepalive_task
             except asyncio.CancelledError:
                 pass
+            except Exception as exc:  # noqa: BLE001 - a crashed keepalive must not skip the cleanup below
+                log.debug("keepalive had failed: %r", exc)
             self._keepalive_task = None
         if self._zeroconf:
             if self._service_info:
@@ -185,7 +187,10 @@ class RideEmulator:
     # --- us -> Zwift ---------------------------------------------------------
 
     async def pulse(self, direction: Tap, ms: int) -> bool:
-        """Hold the D-pad `direction` for `ms`, then release. Pulses run one at a time, in order."""
+        """Hold the D-pad `direction` for `ms`, then release; True if Zwift got a pressed frame.
+
+        Pulses run one at a time, in order.
+        """
         async with self._pulse_lock:
             if self._state is not EmulatorState.READY:
                 return False
@@ -194,15 +199,19 @@ class RideEmulator:
             # and a clock-driven loop would then flood Zwift until the deadline passed.
             repeat_ms = max(1, round(self.repeat_s * 1000))
             sends = max(1, math.ceil(ms / repeat_ms))  # integer ms: 200 / 50 is exactly 4 sends
+            pressed = 0  # only pressed frames steer: a release alone does not move the rider
             for i in range(sends):
-                await self._send(P.ASYNC_CHAR_UUID, frame)
+                pressed += await self._send(P.ASYNC_CHAR_UUID, frame)
                 await asyncio.sleep(min(repeat_ms, ms - i * repeat_ms) / 1000)
             await self._send(P.ASYNC_CHAR_UUID, P.RELEASED_FRAME)
             await asyncio.sleep(self.gap_s)
-            return True
+            return pressed > 0  # False: Zwift dropped the link before any pressed frame reached it
 
     async def _keepalive_loop(self) -> None:
         while True:
             await asyncio.sleep(self.keepalive_s)
-            if self._state is EmulatorState.READY and not self._pulse_lock.locked():
-                await self._send(P.ASYNC_CHAR_UUID, P.RELEASED_FRAME)
+            try:
+                if self._state is EmulatorState.READY and not self._pulse_lock.locked():
+                    await self._send(P.ASYNC_CHAR_UUID, P.RELEASED_FRAME)
+            except Exception as exc:  # noqa: BLE001 - without keepalives Zwift drops the controller in ~20 s
+                log.warning("keepalive error, continuing: %r", exc)
