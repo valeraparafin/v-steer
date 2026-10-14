@@ -22,14 +22,13 @@ from .zwift.ride import EmulatorState, RideEmulator
 log = logging.getLogger("vsteer")
 
 HINT_AFTER_S = 60
-# Loaded lazily at runtime, so a frozen build can miss them; --check imports them up front.
-RUNTIME_MODULES = (
-    "bleak",
-    "bleak.backends.winrt.scanner",
-    "bleak.backends.winrt.client",
+# Packages whose modules are imported by name at runtime, so PyInstaller cannot see them (plain
+# imports, even inside functions, it does see). The one list for both: packaging/build.py bundles
+# every submodule of each, and --check imports and exercises them.
+LAZY_PACKAGES = (
+    "bleak.backends.winrt",  # Windows backend only: the macOS/Linux ones cannot load here
+    "winrt",
     "zeroconf",
-    "zeroconf.asyncio",
-    "ifaddr",
 )
 LEGACY_MUTEX = "Local\\vs200-steer"  # the app's mutex before the rename to V-Steer
 _ERROR_ALREADY_EXISTS = 183
@@ -163,19 +162,22 @@ async def _ride(cfg: config.Config, cfg_path: Path) -> int:
 
 
 async def _smoke_runtime() -> None:
-    """Build (not start) a BLE scanner and an mDNS stack: WinRT and zeroconf load more on first use."""
-    from bleak import BleakScanner
+    """Build (not start) what the app uses from each lazy package; they load more on first use."""
+    import ifaddr
+    from bleak import BleakClient, BleakScanner
     from zeroconf.asyncio import AsyncZeroconf
 
-    BleakScanner()
+    BleakScanner()  # WinRT scanner backend
+    BleakClient("00:00:00:00:00:00")  # WinRT client backend; nothing connects
     zc = AsyncZeroconf(interfaces=["127.0.0.1"])
     await zc.async_close()
+    ifaddr.get_adapters()
 
 
 def check_runtime() -> int:
     """Load every lazily used dependency: proves an exe build is complete without Bluetooth."""
     missing = []
-    for name in RUNTIME_MODULES:
+    for name in LAZY_PACKAGES:
         try:
             importlib.import_module(name)
         except Exception as exc:  # noqa: BLE001 - report every broken module, not just the first

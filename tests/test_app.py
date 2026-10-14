@@ -83,7 +83,7 @@ def test_check_loads_bluetooth_and_mdns(capsys):
 def test_check_fails_when_a_module_is_missing(monkeypatch, capsys):
     from vsteer import app
 
-    monkeypatch.setattr(app, "RUNTIME_MODULES", ("vsteer_no_such_module",))
+    monkeypatch.setattr(app, "LAZY_PACKAGES", ("vsteer_no_such_module",))
     assert app.main(["--check"]) == 1
     assert "vsteer_no_such_module" in capsys.readouterr().out
 
