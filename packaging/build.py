@@ -29,10 +29,11 @@ def pyinstaller_args() -> list[str]:
 
 
 def main() -> int:
-    import PyInstaller.__main__
+    from PyInstaller.__main__ import run as pyinstaller_run
 
-    PyInstaller.__main__.run(pyinstaller_args())
-    return subprocess.call([str(ROOT / "dist" / "V-Steer.exe"), "--check"])
+    pyinstaller_run(pyinstaller_args())
+    # No stdin: after a failed check the exe asks "Press Enter", which would hang the build.
+    return subprocess.call([str(ROOT / "dist" / "V-Steer.exe"), "--check"], stdin=subprocess.DEVNULL)
 
 
 if __name__ == "__main__":
