@@ -57,8 +57,12 @@ No hardware needed: Bluetooth and Zwift are faked.
 .\build.cmd
 ```
 
-The result is `dist\V-Steer.exe`. `build.cmd` finishes with `V-Steer.exe --check`, which
-loads the Bluetooth and mDNS modules to prove the build is complete.
+The result is `dist\V-Steer.exe`. `build.cmd` runs `packaging\build.py`, which bundles the
+packages listed in `LAZY_PACKAGES` (`src/vsteer/app.py`) and finishes with `V-Steer.exe --check`:
+it loads those packages and builds a Bluetooth scanner, client and mDNS stack to prove the build
+is complete.
+
+GitHub Actions in `.github/workflows` are pinned to commit SHAs; Dependabot proposes the bumps.
 
 ## Release
 
