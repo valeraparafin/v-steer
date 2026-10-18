@@ -9,7 +9,7 @@ description = "Steer in Zwift with a ThinkRider VS200 thumb remote"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-dependencies = ["bleak>=0.22", "zeroconf>=0.130"]
+dependencies = ["bleak>=0.22", "zeroconf>=0.130", "pystray>=0.19", "Pillow>=10"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6"]
