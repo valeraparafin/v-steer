@@ -328,3 +328,19 @@ async def test_nothing_is_announced_when_up_to_date(tmp_path, caplog):
     assert "New version" not in caplog.text and not events.named("update")
     await session.stop()
     await task
+
+
+async def test_first_run_names_the_device_zwift_will_list(tmp_path):
+    """Review: with the mDNS name taken, Zwift lists 'KICKR BIKE PRO 1337 2'; the picked
+    notification must name that, not the configured name."""
+    class Renamed(FakeEmulator):
+        async def start(self):
+            await super().start()
+            self.advertised_name = f"{self.device_name} 2"
+
+    session, events = _session(tmp_path, Config(), pick=_picks("A1:A1:A1:A1:A1:A1"), emulator_factory=Renamed)
+    task = asyncio.create_task(session.run())
+    await until(lambda: FakeInput.instances)
+    assert events.named("picked") == [("picked", "A1:A1:A1:A1:A1:A1", "KICKR BIKE PRO 1337 2")]
+    await session.stop()
+    await task

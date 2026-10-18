@@ -134,9 +134,10 @@ class Session:
 
     async def _ride(self) -> int:
         cfg = self.cfg
+        address = None  # a first-run pick; announced once Zwift has a name to list
         if not cfg.vs200_address:
             log.info("First run: wake the VS200 you want to steer with and press any button on it ...")
-            address = await self._pick_remote(cfg.device_name)
+            address = await self._pick_remote()
             if not address:
                 log.error("No VS200 was pressed within 2 minutes. Is it awake and not connected to the trainer?")
                 self.events.fatal("No VS200 was pressed within 2 minutes")
@@ -160,6 +161,8 @@ class Session:
             self.events.fatal(f"Zwift link could not start: {exc}")
             return 2
         self._emulator, self._core = emulator, core
+        if address:  # named now: a taken mDNS name makes Zwift list "... 2"
+            self.events.picked(address, emulator.advertised_name)
         log.info("Advertising '%s' on %s:%d. In Zwift: Paired Devices -> Controls -> pair it.",
                  emulator.advertised_name, lan, emulator.bound_port)
         hint = self._spawn(_hint_loop(emulator))
@@ -203,12 +206,14 @@ class Session:
         if self._core:
             self._core.on_input_state(InputState.SEARCHING)
         log.info("Pick another remote: press any button on the VS200 you want to steer with ...")
-        device = self._emulator.advertised_name if self._emulator else self.cfg.device_name
-        if not await self._pick_remote(device):
+        address = await self._pick_remote()
+        if address:
+            self.events.picked(address, self._emulator.advertised_name)
+        else:
             log.warning("No VS200 was pressed within 2 minutes; keeping %s", self.cfg.vs200_address)
         self._start_input()
 
-    async def _pick_remote(self, device: str) -> str | None:
+    async def _pick_remote(self) -> str | None:
         self.events.pick_started()
         address = await self._pick(timeout=PICK_TIMEOUT_S)
         if not address:
@@ -216,7 +221,6 @@ class Session:
         self.cfg.vs200_address = address
         self._save()
         log.info("Saved VS200 %s to %s", address, self.cfg_path)
-        self.events.picked(address, device)
         return address
 
     def _save(self) -> None:

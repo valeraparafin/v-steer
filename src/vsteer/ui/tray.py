@@ -161,17 +161,23 @@ class TrayApp:
         self._icon.run(setup)
 
     def _start_session(self) -> None:
-        self.loop.start()
-        self.session = self._session_factory(TrayEvents(self))
-        self.loop.submit(self._run_session(self.session))
+        try:
+            self.loop.start()
+            self.session = self._session_factory(TrayEvents(self))
+            self.loop.submit(self._run_session(self.session))
+        except Exception as exc:  # noqa: BLE001 - in pystray's setup thread an error would be lost
+            self._crashed(exc)
 
     async def _run_session(self, session: Session) -> None:
         try:
             await session.run()
-        except Exception as exc:  # keep the tray up so the log can be opened
-            log.exception("V-Steer stopped on an unexpected error")
-            self._set(error=f"unexpected error: {exc}")
-            self.notifier.once("error", reason=f"unexpected error: {exc}")
+        except Exception as exc:  # noqa: BLE001 - keep the tray up so the log can be opened
+            self._crashed(exc)
+
+    def _crashed(self, exc: BaseException) -> None:
+        log.error("V-Steer stopped on an unexpected error", exc_info=exc)
+        self._set(error=f"unexpected error: {exc}")
+        self.notifier.once("error", reason=f"unexpected error: {exc}")
 
     # --- what the tray shows --------------------------------------------------------
 
@@ -249,10 +255,9 @@ class TrayApp:
         session = self.session
         if session is None:
             return
-        on = not session.cfg.swap
 
         async def apply() -> None:
-            session.set_swap(on)
+            session.set_swap(not session.cfg.swap)  # read on the session's loop: clicks apply in order
             self.refresh()
 
         self._submit("Swap", apply)

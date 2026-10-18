@@ -376,3 +376,36 @@ def test_background_loop_runs_coroutines_and_stops():
     assert not loop.alive
     with pytest.raises(RuntimeError):
         loop.submit(where())
+
+
+def test_two_quick_swap_clicks_cancel_out(tmp_path):
+    """Review: the new value was read on the tray thread, so a second click before the first
+    reached the session set the same value again."""
+    h = Harness(tmp_path).start()
+    wait_for(lambda: h.session.calls)
+
+    async def busy():
+        time.sleep(0.2)  # noqa: ASYNC251 - block the session loop on purpose: both clicks queue up
+
+    h.app.loop.submit(busy())
+    h.click("Swap + and −")
+    h.click("Swap + and −")
+    wait_for(lambda: len([c for c in h.session.calls if isinstance(c, tuple) and c[0] == "set_swap"]) == 2)
+    assert h.session.cfg.swap is False
+    h.quit()
+
+
+def test_a_session_that_cannot_start_turns_the_icon_red(tmp_path, caplog):
+    """Review: an error while starting the session was lost in pystray's setup thread."""
+    h = Harness(tmp_path)
+
+    def broken(events):
+        raise OSError("no event loop for you")
+
+    h.app._session_factory = broken
+    with caplog.at_level(logging.ERROR, logger="vsteer"):
+        h.start()
+        wait_for(lambda: h.icon.notes)
+    assert h.icon.icon.tobytes() == render(IconState.ERROR, 32).tobytes()
+    assert "no event loop for you" in h.icon.notes[0][0] and "Traceback" in caplog.text
+    assert h.quit() == 0
