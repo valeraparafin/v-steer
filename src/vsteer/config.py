@@ -33,7 +33,6 @@ class ConfigError(Exception):
 
 
 APP_DIR_NAME = "V-Steer"
-LEGACY_DIR_NAME = "vs200-steer"  # the app's name before v0.1.0
 
 
 def _appdata() -> Path:
@@ -42,23 +41,6 @@ def _appdata() -> Path:
 
 def default_path() -> Path:
     return _appdata() / APP_DIR_NAME / "config.toml"
-
-
-def migrate_legacy_config(appdata: Path | None = None) -> Path | None:
-    """Move config.toml from the pre-rename folder if the new folder has none; return the old path.
-
-    Only the config moves: it is never held open, unlike the old logs, which stay behind.
-    """
-    appdata = appdata or _appdata()
-    old, new = appdata / LEGACY_DIR_NAME / "config.toml", appdata / APP_DIR_NAME / "config.toml"
-    if not old.is_file() or new.exists():
-        return None
-    try:
-        new.parent.mkdir(parents=True, exist_ok=True)
-        old.replace(new)
-    except OSError:  # unexpected lock or permissions: start with fresh settings rather than fail
-        return None
-    return old
 
 
 _TEMPLATE = """\

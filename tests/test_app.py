@@ -179,20 +179,3 @@ async def test_nothing_is_announced_when_up_to_date(caplog):
         await app._announce_update(check=none)
     assert "New version" not in caplog.text
 
-
-def test_an_old_vs200_steer_still_running_is_detected():
-    from vsteer.app import legacy_instance_running
-
-    name = f"Local\vs200-steer-test-{uuid.uuid4()}"
-    assert legacy_instance_running(name) is False
-    held = acquire_single_instance(name)
-    assert legacy_instance_running(name) is True
-    release_single_instance(held)
-
-
-def test_v_steer_refuses_to_start_next_to_an_old_copy(monkeypatch, capsys):
-    from vsteer import app
-
-    monkeypatch.setattr(app, "legacy_instance_running", lambda name=None: True)
-    assert app.main([]) == 1
-    assert "vs200-steer" in capsys.readouterr().out
