@@ -1,6 +1,7 @@
 """Build dist/V-Steer.exe with PyInstaller, then run its --check. Called by build.cmd (and CI).
 
-The packages to bundle come from vsteer.app.LAZY_PACKAGES, the same list --check proves.
+The packages and modules to bundle come from vsteer.app.LAZY_PACKAGES and LAZY_MODULES, the same
+lists --check proves. The exe is windowed (the tray); --console opens its own window.
 """
 
 from __future__ import annotations
@@ -12,12 +13,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from vsteer.app import LAZY_PACKAGES  # after the sys.path line: run as a script, not installed
+from vsteer.app import LAZY_MODULES, LAZY_PACKAGES  # after the sys.path line: run as a script, not installed
+
+# Pillow extensions the tray never uses (it draws lines and saves ICO/PNG); AVIF alone is 8 MB.
+# Pillow imports each of them lazily and copes when they are missing; --check proves ICO still works.
+EXCLUDED_MODULES = ("PIL._avif", "PIL._webp", "PIL._imagingft", "PIL._imagingcms", "PIL._imagingtk",
+                    "PIL.ImageTk", "PIL.ImageQt", "tkinter")
 
 
 def pyinstaller_args() -> list[str]:
     args = [
-        "--noconfirm", "--clean", "--onefile", "--console",
+        "--noconfirm", "--clean", "--onefile", "--noconsole",
         "--name", "V-Steer",
         "--icon", str(ROOT / "packaging" / "v-steer.ico"),
         "--paths", str(ROOT / "src"),
@@ -25,6 +31,10 @@ def pyinstaller_args() -> list[str]:
     ]
     for package in LAZY_PACKAGES:
         args += ["--collect-submodules", package]
+    for module in LAZY_MODULES:
+        args += ["--hidden-import", module]
+    for module in EXCLUDED_MODULES:
+        args += ["--exclude-module", module]
     return [*args, str(ROOT / "packaging" / "entry.py")]
 
 

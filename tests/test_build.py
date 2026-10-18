@@ -1,7 +1,7 @@
 import importlib.util
 from pathlib import Path
 
-from vsteer.app import LAZY_PACKAGES
+from vsteer.app import LAZY_MODULES, LAZY_PACKAGES
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -64,3 +64,24 @@ def test_a_failing_check_does_not_wait_for_enter(monkeypatch):
     monkeypatch.setattr(build.subprocess, "call", lambda cmd, **kw: calls.append(kw) or 1)
     assert build.main() == 1
     assert calls[0].get("stdin") is subprocess.DEVNULL
+
+
+def _pairs(args):
+    return [args[i:i + 2] for i in range(len(args) - 1)]
+
+
+def test_the_exe_bundles_pystrays_windows_backend():
+    """pystray picks its backend by name at runtime: PyInstaller cannot see it."""
+    assert LAZY_MODULES == ("pystray._win32",)
+    assert ["--hidden-import", "pystray._win32"] in _pairs(_build_module().pyinstaller_args())
+
+
+def test_the_exe_is_windowed():
+    args = _build_module().pyinstaller_args()
+    assert "--noconsole" in args and "--console" not in args
+
+
+def test_unused_pillow_codecs_stay_out_of_the_exe():
+    """The tray draws lines and saves ICO/PNG; AVIF alone added 8 MB to the exe."""
+    excluded = [args[1] for args in _pairs(_build_module().pyinstaller_args()) if args[0] == "--exclude-module"]
+    assert {"PIL._avif", "PIL._webp", "PIL._imagingft", "PIL._imagingcms", "PIL._imagingtk", "tkinter"} <= set(excluded)
