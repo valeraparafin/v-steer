@@ -25,20 +25,26 @@ To stop, right-click the icon → **Quit**.
 
 ## Every next ride
 
-Run `V-Steer.exe` (or tick **Start with Windows** in its menu), then start Zwift. If Zwift
-doesn't connect by itself, pair **KICKR BIKE PRO 1337** under **Controls** again.
+Run `V-Steer.exe` (or tick **Start with Windows** in its menu), then start Zwift.
+
+- V-Steer started while Zwift is already open: Zwift pairs it by itself.
+- V-Steer started first (e.g. with Windows): in Zwift, **Paired Devices → Controls** → pick
+  **KICKR BIKE PRO 1337** once per ride; it is listed at once.
+  Automatic pairing in this case is [being worked on](https://github.com/valeraparafin/v-steer/issues/10).
 
 ## The tray icon
 
 | icon | means |
 |------|-------|
-| orange arrows | ready: the remote and Zwift are connected |
-| grey, yellow frame | one of them is connected; hover the icon to see which |
-| grey | neither is connected yet |
-| red | V-Steer can't steer; **Open log** in the menu says why |
+| <img src="docs/tray/ready.png" width="24"> | ready: the remote and Zwift are connected |
+| <img src="docs/tray/partial.png" width="24"> | one of them is connected; hover the icon to see which |
+| <img src="docs/tray/idle.png" width="24"> | neither is connected yet |
+| <img src="docs/tray/error.png" width="24"> | V-Steer can't steer; **Open log** in the menu says why |
 
 Right-click the icon for the menu: **Swap + and −**, **Pick another remote…**, **Start with
 Windows**, **Open log**, **Open settings folder**, **Help** and **Quit**.
+
+**Start with Windows** remembers where `V-Steer.exe` is: after moving it, untick and tick again.
 
 ## Updates
 
@@ -67,8 +73,9 @@ then quit and start the app again.
   disconnect it or set `[network] address`.
 - **The remote isn't found**: press a button to wake it (it sleeps after ~30 min). It must not be
   connected to the trainer or another app.
-- **See what the app is doing**: start it as `V-Steer.exe --console` (from a shortcut or a
-  terminal): the log shows in a window instead of the tray.
+- **See what the app is doing**: quit it from the tray, then start it with `--console`: the log
+  shows in a window instead of the tray. In PowerShell: `& "C:\path\to\V-Steer.exe" --console`
+  (or add ` --console` to a shortcut's target).
 - **The antivirus deletes the exe**: this is a known false alarm for unsigned Python apps; restore
   it from quarantine or [report it](https://github.com/valeraparafin/v-steer/issues).
 
@@ -76,6 +83,12 @@ then quit and start the app again.
 
 [Open an issue](https://github.com/valeraparafin/v-steer/issues/new) and attach the log
 (menu: **Open log**, or `%APPDATA%\V-Steer\v-steer.log`).
+
+## What's next
+
+Automatic pairing when Zwift starts after V-Steer, then more remotes and apps. See the
+[milestones](https://github.com/valeraparafin/v-steer/milestones); ideas are welcome as
+[issues](https://github.com/valeraparafin/v-steer/issues).
 
 ## More
 

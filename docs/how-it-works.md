@@ -87,7 +87,8 @@ announce the new version on their next start.
 **1. Bump the version** (website is enough):
 
 1. Open `src/vsteer/__init__.py` on GitHub, click the pencil, change `__version__ = "0.1.1"` to
-   the new number, e.g. `"0.1.2"`.
+   the new number, e.g. `"0.1.2"`. Optional: add the release notes as
+   `docs/release-notes/v0.1.2.md` in the same branch.
 2. **Commit changes… → Create a new branch → Propose changes → Create pull request.**
 3. Wait for the `test` and `build` checks, then **Merge**.
 
@@ -115,7 +116,8 @@ git tag -a v0.1.2 -m "V-Steer v0.1.2"
 git push origin v0.1.2
 ```
 
-CI creates the release itself, with the exe and the notes from `packaging/release-notes.md` plus the
+CI creates the release itself, with the exe and the notes from `docs/release-notes/v0.1.2.md` if
+that file exists (write it in the version PR), otherwise from `packaging/release-notes.md` plus the
 merged PRs. Edit the text afterwards if you like.
 
 **If the exe does not appear:** open **Actions** and find the red step. Most often the tag and
@@ -127,5 +129,5 @@ release.
 ## Icon
 
 `src/vsteer/ui/icon.py` draws the icon for every tray state; `packaging/make_icon.py` writes the
-ready look to `packaging/v-steer.ico` (the exe) and `docs/icon.png` (the README). After a design
-change run `.venv\Scripts\python packaging\make_icon.py` and commit both outputs.
+ready look to `packaging/v-steer.ico` (the exe) and `docs/icon.png`, and every state to `docs/tray/`
+(the README table). After a design change run `.venv\Scripts\python packaging\make_icon.py` and commit the outputs.
