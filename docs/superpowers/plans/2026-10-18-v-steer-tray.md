@@ -22,6 +22,14 @@
 - The exe is windowed; `--check` and `--version` still print and return their exit code in CI.
 - Work on branch `feat/tray` (from `docs/tray-spec`); one PR at the end; `/code-review` before the user merges.
 
+## Task 0 (first): remove the rename leftovers
+
+**Files:** Modify `src/vsteer/app.py` (drop `LEGACY_MUTEX`, `legacy_instance_running`, the legacy check and the settings move in `main()`), `src/vsteer/config.py` (drop `LEGACY_DIR_NAME`, `migrate_legacy_config`); Test: `tests/test_app.py`, `tests/test_config.py` (drop the tests for both).
+
+- [ ] **Step 1:** Delete the code and its tests; `git grep -n "legacy\|vs200-steer" src tests` finds nothing but comments about history.
+- [ ] **Step 2:** Run `.venv\Scripts\python -m pytest -q` and `.venv\Scriptsuff check .` — all pass.
+- [ ] **Step 3:** Commit: `git commit -am "refactor: drop the vs200-steer rename leftovers"`
+
 ## Review Focus
 
 1. Quit while a remote pick or a BLE connect is in progress: the app must still exit within a few seconds and unregister mDNS (Task 4).
@@ -293,7 +301,7 @@ git commit -m "refactor: the asyncio app becomes a Session reporting through Eve
   - `class BackgroundLoop`: `start() -> None` (thread `"v-steer-session"` with its own loop), `submit(coro) -> concurrent.futures.Future`, `stop(timeout: float = 10) -> None`, `alive: bool`.
   - `class TrayApp(session_factory: Callable[[Events], Session], *, backend=pystray, version=__version__, autostart_mod=autostart, open_path=os.startfile, open_url=webbrowser.open, log_path: Path, settings_dir: Path)` with `run() -> int` (blocks on the main thread until Quit; returns the session's exit code, 0 on Quit).
   - `notify_and_exit(message: str, *, backend=pystray) -> None` for "already running" (shows a temporary icon, notifies, waits ~5 s, stops).
-  - `TrayApp.run_error(reason: str) -> int`: the tray in `ERROR` with the error notification, no session (config error, older vs200-steer running); only Open log / Open settings folder / Help / Quit work.
+  - `TrayApp.run_error(reason: str) -> int`: the tray in `ERROR` with the error notification, no session (config error); only Open log / Open settings folder / Help / Quit work.
   - `HELP_URL = "https://github.com/valeraparafin/v-steer#troubleshooting"`.
 
 Menu (spec, in order): status line (disabled) · `Swap + and −` (checked = `cfg.swap`) · `Pick another remote…` · `Start with Windows` (checked = `autostart.is_enabled()`, visible = `autostart.available()`) · separator · `Open log` · `Open settings folder` · `Help` · `Download {tag}` (visible only after `update_available`) · separator · `Quit`.
@@ -340,7 +348,7 @@ git commit -m "feat: tray app: icon, menu, notifications over a background sessi
 - Consumes: `TrayApp`, `notify_and_exit` (Task 5), `Session`, `ConsoleEvents` (Task 4).
 - Produces: `--console` flag; `LAZY_MODULES = ("pystray._win32",)`; `attach_console(new: bool) -> None` (`AllocConsole` when `new`, else `AttachConsole(ATTACH_PARENT_PROCESS)`; then rebinds `sys.stdout`/`sys.stderr` to `CONOUT$`; when no console can be had, to `os.devnull`); `setup_logging(debug, log_path, console: bool)`.
 
-Flow in `main()`: `--check`/`--version` → `attach_console(new=False)` first. `--console` → `attach_console(new=True)`, today's path with `ConsoleEvents`. Default → tray: second instance → `notify_and_exit("V-Steer is already running — look for its icon next to the clock.")`; older vs200-steer running → `run_error("an older vs200-steer is running; close it")`; config error → `run_error(<the ConfigError text>)`; otherwise `TrayApp(...).run()`.
+Flow in `main()`: `--check`/`--version` → `attach_console(new=False)` first. `--console` → `attach_console(new=True)`, today's path with `ConsoleEvents`. Default → tray: second instance → `notify_and_exit("V-Steer is already running — look for its icon next to the clock.")`; config error → `run_error(<the ConfigError text>)`; otherwise `TrayApp(...).run()`.
 
 - [ ] **Step 1: Write the failing tests**
 

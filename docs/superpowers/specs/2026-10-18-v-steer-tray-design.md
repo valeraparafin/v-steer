@@ -18,6 +18,12 @@ console; the icon state matches what is connected; no notification shows more th
 - Languages other than English (all strings are a handful of short English phrases).
 - Changing the pulse length from the menu: it stays in `config.toml` (`steer.pulse_ms`).
 - macOS (#24), but the design keeps the tray on the main thread, which macOS requires.
+- An icon badge for a new version: the once-per-run notification (every ride starts the app) and
+  the `Download` menu item are enough; a badge can be added later as one more icon look.
+
+Removed in this version: the leftovers of the vs200-steer → V-Steer rename (the check for a running
+vs200-steer and the move of its settings folder). Every user started on V-Steer 0.1.0, and the
+author's settings moved on 2026-10-13.
 
 ## Behaviour
 
@@ -89,7 +95,6 @@ Fatal (icon `ERROR`, error notification, the app stays in the tray so the log an
 opened; the user quits and starts again):
 
 - config error; no LAN address; the DirCon port or mDNS name cannot be taken;
-- an older vs200-steer is running;
 - an unexpected exception in the background thread (logged with traceback).
 
 Not fatal (icon only): VS200 asleep or out of range, Zwift not connected, a failed update check.
