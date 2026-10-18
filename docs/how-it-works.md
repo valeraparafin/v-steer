@@ -24,9 +24,21 @@ The full protocol notes and design decisions are in
 | `src/vsteer/zwift/dircon.py` | DirCon server, vendored from ZwiftBridge (MIT) |
 | `src/vsteer/zwift/protocol.py` | UUIDs, frames, GET replies |
 | `src/vsteer/core.py` | wires taps to pulses, publishes status |
+| `src/vsteer/session.py` | one ride: pick, advertise, steer; reports through `Events` |
+| `src/vsteer/ui/tray.py` | the tray icon and menu over a background session |
+| `src/vsteer/ui/tray_model.py` | what the tray shows: icon state, tooltip, notification texts |
+| `src/vsteer/ui/icon.py` | draws the icon for each state (schemes A–D′, `ACTIVE_SCHEME`) |
+| `src/vsteer/ui/console.py` | `--console`: the status line in the log |
+| `src/vsteer/autostart.py` | Start with Windows (`HKCU\...\Run`, value `V-Steer`) |
 | `src/vsteer/net.py` | picks the LAN address to advertise |
 | `src/vsteer/config.py` | `%APPDATA%\V-Steer\config.toml` |
-| `src/vsteer/app.py` | command line, logging, single instance |
+| `src/vsteer/app.py` | command line, logging, single instance, tray or console |
+
+**Threads.** The tray (pystray) owns the main thread, as Windows and macOS want. The ride runs as
+a `Session` on one background thread with its own asyncio loop. The session reports through
+`Events` (status, pick, update, fatal error); the tray stores the news and redraws the icon,
+tooltip and menu. Menu clicks go the other way as coroutines submitted to the session's loop.
+`--console` runs the same `Session` with `ConsoleEvents` on the main thread instead.
 
 ## Run from source
 
@@ -39,7 +51,8 @@ cd v-steer
 .\run.cmd
 ```
 
-`.\run.cmd --debug` logs the full DirCon traffic to `%APPDATA%\V-Steer\v-steer.log`.
+`.\run.cmd` starts the tray; `.\run.cmd --console` shows the log in the terminal instead.
+`--debug` logs the full DirCon traffic to `%APPDATA%\V-Steer\v-steer.log`.
 
 ## Tests
 
@@ -57,10 +70,11 @@ No hardware needed: Bluetooth and Zwift are faked.
 .\build.cmd
 ```
 
-The result is `dist\V-Steer.exe`. `build.cmd` runs `packaging\build.py`, which bundles the
-packages listed in `LAZY_PACKAGES` (`src/vsteer/app.py`) and finishes with `V-Steer.exe --check`:
-it loads those packages and builds a Bluetooth scanner, client and mDNS stack to prove the build
-is complete.
+The result is `dist\V-Steer.exe`, a windowed exe (no console). `build.cmd` runs
+`packaging\build.py`, which bundles what `LAZY_PACKAGES` and `LAZY_MODULES` (`src/vsteer/app.py`)
+list, leaves out the Pillow codecs the icon never uses, and finishes with `V-Steer.exe --check`: it
+loads those modules and builds a Bluetooth scanner, client, mDNS stack and tray icon to prove the
+build is complete. `--check` and `--version` print to the console they are started from.
 
 GitHub Actions in `.github/workflows` are pinned to commit SHAs; Dependabot proposes the bumps.
 
@@ -112,6 +126,6 @@ release.
 
 ## Icon
 
-`packaging/make_icon.py` draws the icon (`packaging/v-steer.ico` for the exe, `docs/icon.png`
-for the README). Edit it and run `.venv\Scripts\python packaging\make_icon.py` (needs `pip install
-pillow`); commit both outputs.
+`src/vsteer/ui/icon.py` draws the icon for every tray state; `packaging/make_icon.py` writes the
+ready look to `packaging/v-steer.ico` (the exe) and `docs/icon.png` (the README). After a design
+change run `.venv\Scripts\python packaging\make_icon.py` and commit both outputs.

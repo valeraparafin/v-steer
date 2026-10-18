@@ -1,4 +1,7 @@
-"""Entry point: python -m vsteer [--debug] [--config PATH] [--check] [--version]."""
+"""Entry point: python -m vsteer [--console] [--debug] [--config PATH] [--check] [--version].
+
+Without --console V-Steer lives in the tray; --console shows the log in a window instead.
+"""
 
 from __future__ import annotations
 
@@ -8,20 +11,19 @@ import ctypes
 import importlib
 import logging
 import logging.handlers
+import os
 import sys
 import traceback
 from ctypes import wintypes
 from pathlib import Path
 
-from . import __version__, config, net, update
-from .core import Core
-from .ui.console import ConsoleUI
-from .vs200 import Vs200Input, pick_remote
-from .zwift.ride import EmulatorState, RideEmulator
+from . import __version__, config
+from .session import Session
+from .ui.console import ConsoleEvents
+from .ui.tray import TrayApp, notify_and_exit
 
 log = logging.getLogger("vsteer")
 
-HINT_AFTER_S = 60
 # Packages whose modules are imported by name at runtime, so PyInstaller cannot see them (plain
 # imports, even inside functions, it does see). The one list for both: packaging/build.py bundles
 # every submodule of each, and --check imports and exercises them.
@@ -30,12 +32,40 @@ LAZY_PACKAGES = (
     "winrt",
     "zeroconf",
 )
-LEGACY_MUTEX = "Local\\vs200-steer"  # the app's mutex before the rename to V-Steer
+# Single modules loaded by name: bundled with --hidden-import, imported by --check.
+LAZY_MODULES = ("pystray._win32",)  # pystray picks its backend by name
+ALREADY_RUNNING = "V-Steer is already running — look for its icon next to the clock."
+ATTACH_PARENT_PROCESS = 0xFFFFFFFF  # (DWORD)-1
+_CONSOLE_OUTPUT_ARGS = {"--check", "--version", "--help", "-h"}
 _ERROR_ALREADY_EXISTS = 183
 _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 _kernel32.CreateMutexW.restype = wintypes.HANDLE
 _kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
 _kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+_kernel32.AttachConsole.argtypes = [wintypes.DWORD]
+_kernel32.SetConsoleOutputCP.argtypes = [wintypes.UINT]
+
+
+def attach_console(new: bool, *, kernel32=None, opener=open) -> None:
+    """Give the windowed exe somewhere to print: its own console window (`new`) or the parent's.
+
+    No-op while stdout and stderr exist: a run from source, or output redirected by the parent.
+    """
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    k = kernel32 or _kernel32
+    if new:
+        has_console = bool(k.AllocConsole())
+        if has_console:
+            k.SetConsoleOutputCP(65001)  # UTF-8, for names like the swap menu's "−"
+    else:
+        has_console = bool(k.AttachConsole(ATTACH_PARENT_PROCESS))
+    out = (opener("CONOUT$", "w", encoding="utf-8", buffering=1) if has_console
+           else opener(os.devnull, "w", encoding="utf-8"))
+    sys.stdout = sys.stdout or out
+    sys.stderr = sys.stderr or out
+    if new and has_console and sys.stdin is None:
+        sys.stdin = opener("CONIN$", "r", encoding="utf-8")  # for "Press Enter" after an error
 
 
 def acquire_single_instance(name: str = "Local\\v-steer") -> int | None:
@@ -52,113 +82,20 @@ def release_single_instance(handle: int) -> None:
     _kernel32.CloseHandle(handle)
 
 
-def legacy_instance_running(name: str = LEGACY_MUTEX) -> bool:
-    """Is a pre-rename vs200-steer running? It uses another mutex name, so the normal check misses it."""
-    handle = acquire_single_instance(name)
-    if handle is None:
-        return True
-    release_single_instance(handle)
-    return False
-
-
-class HintTimer:
-    """Fires once after Zwift has been away for `after_s`, counted from when it went away."""
-
-    def __init__(self, after_s: float = HINT_AFTER_S) -> None:
-        self.after_s = after_s
-        self._away_since: float | None = None
-        self._hinted = False
-        self.was_connected = False  # Zwift had paired before: the hint is about re-pairing, not setup
-
-    def update(self, state: EmulatorState, now: float) -> bool:
-        if state is not EmulatorState.ADVERTISING:
-            self._away_since, self._hinted = None, False
-            self.was_connected = self.was_connected or state is not EmulatorState.STOPPED
-            return False
-        if self._away_since is None:
-            self._away_since = now
-        if self._hinted or now - self._away_since < self.after_s:
-            return False
-        self._hinted = True
-        return True
-
-
 def setup_logging(debug: bool, log_path: Path) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log.setLevel(logging.DEBUG if debug else logging.INFO)
-    console = logging.StreamHandler()
-    console.setFormatter(logging.Formatter("%(asctime)s %(message)s", "%H:%M:%S"))
+    if sys.stderr is not None:  # the windowed exe in the tray has none: the log file only
+        console = logging.StreamHandler()
+        console.setFormatter(logging.Formatter("%(asctime)s %(message)s", "%H:%M:%S"))
+        log.addHandler(console)
     file = logging.handlers.RotatingFileHandler(log_path, maxBytes=1_000_000, backupCount=3, encoding="utf-8")
     file.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-    log.addHandler(console)
     log.addHandler(file)
 
 
-async def _hint_loop(emulator: RideEmulator) -> None:
-    loop, timer = asyncio.get_running_loop(), HintTimer()
-    while True:
-        await asyncio.sleep(5)
-        if not timer.update(emulator.state, loop.time()):
-            continue
-        if timer.was_connected:
-            log.warning("Zwift disconnected. To steer again: in Zwift, Paired Devices -> Controls -> pair '%s'.",
-                        emulator.advertised_name)
-        else:
-            log.warning(
-                "Zwift has not connected yet. In Zwift: Paired Devices -> Controls -> pair '%s'. "
-                "If it is not listed: allow V-Steer/Python through Windows Firewall, "
-                "check the PC and Zwift are on the same network, or set [network] address in the config.",
-                emulator.advertised_name,
-            )
-
-
-async def _announce_update(check=update.check_for_update) -> None:
-    tag = await check()
-    if tag:
-        log.warning("New version %s is available: %s", tag, update.RELEASES_PAGE)
-
-
 async def run(cfg: config.Config, cfg_path: Path) -> int:
-    updates = asyncio.create_task(_announce_update()) if cfg.check_updates else None
-    try:
-        return await _ride(cfg, cfg_path)
-    finally:
-        if updates:
-            updates.cancel()
-
-
-async def _ride(cfg: config.Config, cfg_path: Path) -> int:
-    if not cfg.vs200_address:
-        log.info("First run: wake the VS200 you want to steer with and press any button on it ...")
-        address = await pick_remote(timeout=120)
-        if not address:
-            log.error("No VS200 was pressed within 2 minutes. Is it awake and not connected to the trainer?")
-            return 2
-        cfg.vs200_address = address
-        config.save(cfg, cfg_path)
-        log.info("Saved VS200 %s to %s", address, cfg_path)
-
-    lan = cfg.network_address or net.pick_address(net.list_adapters(), net.default_route_ip())
-    if not lan:
-        log.error("No LAN address found to advertise on. Set [network] address in %s", cfg_path)
-        return 2
-
-    emulator = RideEmulator(lan, device_name=cfg.device_name)
-    core = Core(cfg, emulator)
-    core.subscribe(ConsoleUI().on_status)
-    emulator.on_state_change = core.on_emulator_state
-    vs200 = Vs200Input(cfg.vs200_address, on_tap=core.on_tap, on_state=core.on_input_state)
-
-    await emulator.start()
-    log.info("Advertising '%s' on %s:%d. In Zwift: Paired Devices -> Controls -> pair it.",
-             emulator.advertised_name, lan, emulator.bound_port)
-    hint = asyncio.create_task(_hint_loop(emulator))
-    try:
-        await vs200.run()
-    finally:
-        hint.cancel()
-        await emulator.stop()
-    return 0
+    return await Session(cfg, cfg_path, ConsoleEvents()).run()
 
 
 async def _smoke_runtime() -> None:
@@ -172,12 +109,26 @@ async def _smoke_runtime() -> None:
     zc = AsyncZeroconf(interfaces=["127.0.0.1"])
     await zc.async_close()
     ifaddr.get_adapters()
+    _smoke_tray()
+
+
+def _smoke_tray() -> None:
+    """Build (not show) a tray icon, and its image the way pystray hands it to Windows."""
+    import io
+
+    import pystray
+
+    from .ui.icon import IconState, render
+
+    image = render(IconState.IDLE, 32)
+    image.save(io.BytesIO(), format="ICO")  # needs Pillow's ICO and PNG plugins in the exe
+    pystray.Icon("v-steer-check", image, "V-Steer")
 
 
 def check_runtime() -> int:
     """Load every lazily used dependency: proves an exe build is complete without Bluetooth."""
     missing = []
-    for name in LAZY_PACKAGES:
+    for name in (*LAZY_PACKAGES, *LAZY_MODULES):
         try:
             importlib.import_module(name)
         except Exception as exc:  # noqa: BLE001 - report every broken module, not just the first
@@ -197,7 +148,11 @@ def check_runtime() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if _CONSOLE_OUTPUT_ARGS & set(argv):
+        attach_console(new=False)  # before argparse prints --version/--help
     parser = argparse.ArgumentParser(prog="v-steer", description="Steer in Zwift with a ThinkRider VS200.")
+    parser.add_argument("--console", action="store_true", help="show the log in a window instead of the tray")
     parser.add_argument("--debug", action="store_true", help="log the full DirCon traffic")
     parser.add_argument("--config", type=Path, default=None, help="config file path")
     parser.add_argument("--check", action="store_true", help="check that Bluetooth and mDNS modules load, then exit")
@@ -205,10 +160,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.check:
         return check_runtime()
-    if legacy_instance_running():
-        # Plain print: the log file lives in the settings folder, which is not set up yet.
-        print("An older vs200-steer is still running. Close its window, then start V-Steer again.")
-        return 1
+    if args.console:
+        attach_console(new=True)  # before logging: its console handler binds to sys.stderr
     cfg_path = args.config or config.default_path()
     setup_logging(args.debug, cfg_path.parent / "v-steer.log")
     log.info("V-Steer %s", __version__)
@@ -216,17 +169,20 @@ def main(argv: list[str] | None = None) -> int:
     handle = acquire_single_instance()
     if handle is None:
         log.error("V-Steer is already running.")
+        if not args.console:
+            notify_and_exit(ALREADY_RUNNING)
         return 1
-    moved_from = None if args.config else config.migrate_legacy_config()
-    if moved_from:
-        log.info("Moved settings from %s to %s", moved_from, cfg_path)
     try:
         try:
             cfg = config.load(cfg_path)
         except config.ConfigError as exc:
             log.error("Config error: %s", exc)
+            if not args.console:
+                _tray(lambda events: None, cfg_path).run_error(f"Config error: {exc}")
             return 2
-        return asyncio.run(run(cfg, cfg_path))
+        if args.console:
+            return asyncio.run(run(cfg, cfg_path))
+        return _tray(lambda events: Session(cfg, cfg_path, events), cfg_path).run()
     except KeyboardInterrupt:
         log.info("Stopped.")
         return 0
@@ -235,6 +191,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     finally:
         release_single_instance(handle)
+
+
+def _tray(session_factory, cfg_path: Path) -> TrayApp:
+    return TrayApp(session_factory, log_path=cfg_path.parent / "v-steer.log", settings_dir=cfg_path.parent)
 
 
 def _interactive() -> bool:
@@ -248,7 +208,8 @@ def exe_main(argv: list[str] | None = None, *, pause=input) -> int:
     except SystemExit as exc:  # argparse: bad argument (2) or --version/--help (0)
         rc = exc.code if isinstance(exc.code, int) else int(exc.code is not None)
     except Exception:  # noqa: BLE001 - startup crash outside main's own handler: show it, then wait
-        traceback.print_exc()
+        if sys.stderr is not None:  # the windowed exe has no stderr before main attaches one
+            traceback.print_exc()
         rc = 1
     if rc and getattr(sys, "frozen", False) and _interactive():
         try:
