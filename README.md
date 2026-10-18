@@ -47,7 +47,7 @@ Run `V-Steer.exe` (or tick **Start with Windows** in its menu), then start Zwift
 Right-click the icon for the menu: **Swap + and −**, **Pick another remote…**, **Start with
 Windows**, **Open log**, **Open settings folder**, **Help** and **Quit**.
 
-<img src="docs/screens/tray-menu.png" width="320" alt="The V-Steer tray menu">
+<img src="docs/screens/tray-menu.png" width="302" alt="The V-Steer tray menu with Start with Windows ticked and a Download item for a new version">
 
 **Start with Windows** remembers where `V-Steer.exe` is: after moving it, untick and tick again.
 
