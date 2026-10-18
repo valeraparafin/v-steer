@@ -19,6 +19,9 @@ Your other VS200 keeps shifting through the trainer as before.
    any button. The app remembers this remote.
 5. In Zwift: **Paired Devices → Controls** → pick **KICKR BIKE PRO 1337**.
    Zwift says "Welcome to steering".
+
+   <img src="docs/screens/zwift-pair.png" width="400" alt="Zwift's Pair Device list with KICKR BIKE PRO 1337 ticked">
+
 6. Ride: `+` moves you one step right, `−` one step left.
 
 To stop, right-click the icon → **Quit**.
@@ -43,6 +46,8 @@ Run `V-Steer.exe` (or tick **Start with Windows** in its menu), then start Zwift
 
 Right-click the icon for the menu: **Swap + and −**, **Pick another remote…**, **Start with
 Windows**, **Open log**, **Open settings folder**, **Help** and **Quit**.
+
+<img src="docs/screens/tray-menu.png" width="320" alt="The V-Steer tray menu">
 
 **Start with Windows** remembers where `V-Steer.exe` is: after moving it, untick and tick again.
 
