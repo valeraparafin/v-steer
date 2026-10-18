@@ -13,7 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from vsteer.ui.icon import IconState, render  # noqa: E402 - needs the src path above
+from vsteer.ui.icon import IconState, render  # after the src path above
 
 ICO_SIZES = (16, 24, 32, 48, 64, 128, 256)
 
