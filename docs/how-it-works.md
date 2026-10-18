@@ -86,21 +86,22 @@ announce the new version on their next start.
 
 **1. Bump the version** (website is enough):
 
-1. Open `src/vsteer/__init__.py` on GitHub, click the pencil, change `__version__ = "0.1.1"` to
-   the new number, e.g. `"0.1.2"`. Optional: add the release notes as
-   `docs/release-notes/v0.1.2.md` in the same branch.
+1. Open `src/vsteer/__init__.py` on GitHub, click the pencil, change the `__version__` number to
+   the new one, higher than the last release, e.g. `"0.2.1"`. Optional: add the release notes as
+   `docs/release-notes/v0.2.1.md` in the same branch.
 2. **Commit changes… → Create a new branch → Propose changes → Create pull request.**
 3. Wait for the `test` and `build` checks, then **Merge**.
 
 **2a. Release from the website:**
 
 1. **Releases → Draft a new release.**
-2. **Tag:** type `v0.1.2` (the same number as `__version__`, with the `v`) → *Create new tag*.
+2. **Tag:** type `v0.2.1` (the same number as `__version__`, with the `v`) → *Create new tag*.
    **Target:** `main`.
-3. **Title:** `V-Steer v0.1.2`. **Generate release notes**, edit the text if you like.
+3. **Title:** `V-Steer v0.2.1`. Paste `docs/release-notes/v0.2.1.md` if you wrote it (CI does not
+   replace text on a release made here), or **Generate release notes**.
 4. Choose **Pre-release**, then **Publish release**. (A pre-release is not announced to running
    copies yet: the exe is not attached for the first few minutes.)
-5. Under **Actions** a run for `v0.1.2` starts; after about 5 minutes `V-Steer.exe` is attached to
+5. Under **Actions** a run for `v0.2.1` starts; after about 5 minutes `V-Steer.exe` is attached to
    the release.
 6. Edit the release, choose **Latest**, **Update release**. Now running copies announce it.
 
@@ -112,22 +113,23 @@ in step 5, delete the release and its tag (see below) and use 2b.
 ```bat
 git checkout main
 git pull
-git tag -a v0.1.2 -m "V-Steer v0.1.2"
-git push origin v0.1.2
+git tag -a v0.2.1 -m "V-Steer v0.2.1"
+git push origin v0.2.1
 ```
 
-CI creates the release itself, with the exe and the notes from `docs/release-notes/v0.1.2.md` if
+CI creates the release itself, with the exe and the notes from `docs/release-notes/v0.2.1.md` if
 that file exists (write it in the version PR), otherwise from `packaging/release-notes.md` plus the
 merged PRs. Edit the text afterwards if you like.
 
 **If the exe does not appear:** open **Actions** and find the red step. Most often the tag and
 `__version__` differ. Delete the release (**Releases → … → Delete**), then its tag (**Tags** → the
-tag → **Delete**, or `git push origin --delete v0.1.2`): deleting a release keeps its tag. Fix the
+tag → **Delete**, or `git push origin --delete v0.2.1`): deleting a release keeps its tag. Fix the
 version and release again. Re-running a failed run is safe; it re-uploads the exe to the existing
 release.
 
 ## Icon
 
 `src/vsteer/ui/icon.py` draws the icon for every tray state; `packaging/make_icon.py` writes the
-ready look to `packaging/v-steer.ico` (the exe) and `docs/icon.png`, and every state to `docs/tray/`
-(the README table). After a design change run `.venv\Scripts\python packaging\make_icon.py` and commit the outputs.
+ready look to `packaging/v-steer.ico` (the exe) and `docs/icon.png`, and every state to
+`docs/tray/` (the README table). After a design change run
+`.venv\Scripts\python packaging\make_icon.py` and commit the outputs.
