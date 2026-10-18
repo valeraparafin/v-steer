@@ -18,33 +18,6 @@ def test_second_instance_is_refused():
     release_single_instance(again)
 
 
-def test_hint_counts_from_when_zwift_went_away():
-    """#9: the firewall hint waits 60 s of no Zwift, measured from the disconnect, not from app start."""
-    from vsteer.app import HintTimer
-
-    t = HintTimer(after_s=60)
-    assert not t.update(EmulatorState.ADVERTISING, 0)
-    assert not t.update(EmulatorState.ADVERTISING, 59)
-    assert t.update(EmulatorState.ADVERTISING, 60)
-    assert not t.update(EmulatorState.ADVERTISING, 61)  # once per wait
-    assert not t.update(EmulatorState.READY, 70)
-    assert not t.update(EmulatorState.ADVERTISING, 100)  # Zwift closed at 100 s
-    assert not t.update(EmulatorState.ADVERTISING, 104)  # was: hinted here, 4 s after the close
-    assert t.update(EmulatorState.ADVERTISING, 160)
-
-
-def test_hint_knows_zwift_had_been_connected():
-    """Review of #9: after a Zwift restart the hint is about re-pairing, not the firewall."""
-    from vsteer.app import HintTimer
-
-    t = HintTimer(after_s=60)
-    t.update(EmulatorState.ADVERTISING, 0)
-    assert t.was_connected is False
-    t.update(EmulatorState.READY, 10)
-    t.update(EmulatorState.ADVERTISING, 20)
-    assert t.was_connected is True
-
-
 def test_format_status():
     s = Status(vs200=InputState.CONNECTED, zwift=EmulatorState.READY, vs200_address="D3:F7")
     assert format_status(s) == "VS200 D3:F7: connected | Zwift: ready"
@@ -151,31 +124,3 @@ def test_check_fails_when_bluetooth_or_mdns_cannot_start(monkeypatch, capsys):
     monkeypatch.setattr(app, "_smoke_runtime", broken)
     assert app.main(["--check"]) == 1
     assert "winrt projection missing" in capsys.readouterr().out
-
-
-async def test_a_new_release_is_announced_in_the_console(caplog):
-    import logging
-
-    from vsteer import app
-    from vsteer.update import RELEASES_PAGE
-
-    async def newer():
-        return "v0.2.0"
-
-    with caplog.at_level(logging.INFO, logger="vsteer"):
-        await app._announce_update(check=newer)
-    assert "v0.2.0" in caplog.text and RELEASES_PAGE in caplog.text
-
-
-async def test_nothing_is_announced_when_up_to_date(caplog):
-    import logging
-
-    from vsteer import app
-
-    async def none():
-        return None
-
-    with caplog.at_level(logging.INFO, logger="vsteer"):
-        await app._announce_update(check=none)
-    assert "New version" not in caplog.text
-

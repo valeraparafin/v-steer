@@ -13,15 +13,12 @@ import traceback
 from ctypes import wintypes
 from pathlib import Path
 
-from . import __version__, config, net, update
-from .core import Core
-from .ui.console import ConsoleUI
-from .vs200 import Vs200Input, pick_remote
-from .zwift.ride import EmulatorState, RideEmulator
+from . import __version__, config
+from .session import Session
+from .ui.console import ConsoleEvents
 
 log = logging.getLogger("vsteer")
 
-HINT_AFTER_S = 60
 # Packages whose modules are imported by name at runtime, so PyInstaller cannot see them (plain
 # imports, even inside functions, it does see). The one list for both: packaging/build.py bundles
 # every submodule of each, and --check imports and exercises them.
@@ -51,28 +48,6 @@ def release_single_instance(handle: int) -> None:
     _kernel32.CloseHandle(handle)
 
 
-class HintTimer:
-    """Fires once after Zwift has been away for `after_s`, counted from when it went away."""
-
-    def __init__(self, after_s: float = HINT_AFTER_S) -> None:
-        self.after_s = after_s
-        self._away_since: float | None = None
-        self._hinted = False
-        self.was_connected = False  # Zwift had paired before: the hint is about re-pairing, not setup
-
-    def update(self, state: EmulatorState, now: float) -> bool:
-        if state is not EmulatorState.ADVERTISING:
-            self._away_since, self._hinted = None, False
-            self.was_connected = self.was_connected or state is not EmulatorState.STOPPED
-            return False
-        if self._away_since is None:
-            self._away_since = now
-        if self._hinted or now - self._away_since < self.after_s:
-            return False
-        self._hinted = True
-        return True
-
-
 def setup_logging(debug: bool, log_path: Path) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log.setLevel(logging.DEBUG if debug else logging.INFO)
@@ -84,71 +59,8 @@ def setup_logging(debug: bool, log_path: Path) -> None:
     log.addHandler(file)
 
 
-async def _hint_loop(emulator: RideEmulator) -> None:
-    loop, timer = asyncio.get_running_loop(), HintTimer()
-    while True:
-        await asyncio.sleep(5)
-        if not timer.update(emulator.state, loop.time()):
-            continue
-        if timer.was_connected:
-            log.warning("Zwift disconnected. To steer again: in Zwift, Paired Devices -> Controls -> pair '%s'.",
-                        emulator.advertised_name)
-        else:
-            log.warning(
-                "Zwift has not connected yet. In Zwift: Paired Devices -> Controls -> pair '%s'. "
-                "If it is not listed: allow V-Steer/Python through Windows Firewall, "
-                "check the PC and Zwift are on the same network, or set [network] address in the config.",
-                emulator.advertised_name,
-            )
-
-
-async def _announce_update(check=update.check_for_update) -> None:
-    tag = await check()
-    if tag:
-        log.warning("New version %s is available: %s", tag, update.RELEASES_PAGE)
-
-
 async def run(cfg: config.Config, cfg_path: Path) -> int:
-    updates = asyncio.create_task(_announce_update()) if cfg.check_updates else None
-    try:
-        return await _ride(cfg, cfg_path)
-    finally:
-        if updates:
-            updates.cancel()
-
-
-async def _ride(cfg: config.Config, cfg_path: Path) -> int:
-    if not cfg.vs200_address:
-        log.info("First run: wake the VS200 you want to steer with and press any button on it ...")
-        address = await pick_remote(timeout=120)
-        if not address:
-            log.error("No VS200 was pressed within 2 minutes. Is it awake and not connected to the trainer?")
-            return 2
-        cfg.vs200_address = address
-        config.save(cfg, cfg_path)
-        log.info("Saved VS200 %s to %s", address, cfg_path)
-
-    lan = cfg.network_address or net.pick_address(net.list_adapters(), net.default_route_ip())
-    if not lan:
-        log.error("No LAN address found to advertise on. Set [network] address in %s", cfg_path)
-        return 2
-
-    emulator = RideEmulator(lan, device_name=cfg.device_name)
-    core = Core(cfg, emulator)
-    core.subscribe(ConsoleUI().on_status)
-    emulator.on_state_change = core.on_emulator_state
-    vs200 = Vs200Input(cfg.vs200_address, on_tap=core.on_tap, on_state=core.on_input_state)
-
-    await emulator.start()
-    log.info("Advertising '%s' on %s:%d. In Zwift: Paired Devices -> Controls -> pair it.",
-             emulator.advertised_name, lan, emulator.bound_port)
-    hint = asyncio.create_task(_hint_loop(emulator))
-    try:
-        await vs200.run()
-    finally:
-        hint.cancel()
-        await emulator.stop()
-    return 0
+    return await Session(cfg, cfg_path, ConsoleEvents()).run()
 
 
 async def _smoke_runtime() -> None:
