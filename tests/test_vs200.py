@@ -3,20 +3,30 @@ from types import SimpleNamespace
 from typing import ClassVar
 
 from vsteer.events import Tap
-from vsteer.vs200 import FEA1_UUID, InputState, Vs200Input, parse_packet, pick_remote
+from vsteer.vs200 import BATTERY_LEVEL_UUID, FEA1_UUID, InputState, Vs200Input, parse_packet, pick_remote
 
 
 class FakeClient:
     instances: ClassVar[list["FakeClient"]] = []
 
+    level = 25
+
     def __init__(self, device, disconnected_callback):
         self.device, self.on_disconnect, self.handler = device, disconnected_callback, None
+        self.battery_handler = None
         FakeClient.instances.append(self)
+
+    async def read_gatt_char(self, uuid):
+        assert uuid == BATTERY_LEVEL_UUID
+        return bytearray([self.level])
 
     async def connect(self):
         pass
 
     async def start_notify(self, uuid, handler):
+        if uuid == BATTERY_LEVEL_UUID:
+            self.battery_handler = handler
+            return
         assert uuid == FEA1_UUID
         self.handler = handler
 
@@ -225,3 +235,48 @@ async def test_search_scans_in_short_bursts():
     except asyncio.CancelledError:
         pass
     assert timeouts and timeouts[0] <= 5.0
+
+
+async def test_battery_is_read_and_followed_after_connect():
+    """#36: the level is read once on connect, then followed through notifications."""
+    FakeClient.instances = []
+    levels = []
+
+    async def find_device(address, timeout):
+        return SimpleNamespace(address="AA")
+
+    vs = Vs200Input("AA", lambda tap: None, find_device=find_device, client_factory=FakeClient,
+                    on_battery=levels.append)
+    task = asyncio.create_task(vs.run())
+    await until(lambda: levels == [25])
+    FakeClient.instances[0].battery_handler(None, bytearray([24]))
+    assert levels == [25, 24]
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_a_remote_without_battery_still_steers():
+    class NoBattery(FakeClient):
+        async def read_gatt_char(self, uuid):
+            raise RuntimeError("characteristic not found")
+
+        async def start_notify(self, uuid, handler):
+            if uuid == BATTERY_LEVEL_UUID:
+                raise RuntimeError("characteristic not found")
+            await super().start_notify(uuid, handler)
+
+    FakeClient.instances = []
+    taps, levels = [], []
+
+    async def find_device(address, timeout):
+        return SimpleNamespace(address="AA")
+
+    vs = Vs200Input("AA", taps.append, find_device=find_device, client_factory=NoBattery,
+                    on_battery=levels.append)
+    task = asyncio.create_task(vs.run())
+    await until(lambda: vs.state is InputState.CONNECTED)
+    await asyncio.sleep(0.05)
+    FakeClient.instances[0].press("f3050301fc")
+    assert taps == [Tap.RIGHT] and levels == [] and len(FakeClient.instances) == 1
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)

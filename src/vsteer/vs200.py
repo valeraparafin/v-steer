@@ -13,6 +13,7 @@ log = logging.getLogger("vsteer")
 
 NAME_PREFIX = "THINK VS"
 FEA1_UUID = "0000fea1-0000-1000-8000-00805f9b34fb"
+BATTERY_LEVEL_UUID = "00002a19-0000-1000-8000-00805f9b34fb"  # standard Battery Level (#36)
 _PACKETS = {
     bytes.fromhex("f3050301fc"): Tap.RIGHT,  # "+" button
     bytes.fromhex("f3050300fb"): Tap.LEFT,   # "-" button
@@ -106,10 +107,12 @@ async def pick_remote(timeout: float = 120.0, *, scan=None, client_factory=None)
 class Vs200Input:
     def __init__(self, address: str, on_tap: Callable[[Tap], None],
                  on_state: Callable[[InputState], None] | None = None, *, find_device=None,
-                 client_factory=None, retry_s: float = 3.0) -> None:
+                 client_factory=None, retry_s: float = 3.0,
+                 on_battery: Callable[[int], None] | None = None) -> None:
         self.address = address
         self.on_tap = on_tap
         self.on_state = on_state
+        self.on_battery = on_battery
         self._find = find_device or _bleak_find
         self._client_factory = client_factory or _bleak_client
         self.retry_s = retry_s
@@ -132,6 +135,20 @@ class Vs200Input:
             log.debug("VS200 unknown packet %s", bytes(data).hex())
             return
         self.on_tap(tap)
+
+    def _on_battery(self, _sender, data) -> None:
+        if self.on_battery and len(data) == 1:
+            self.on_battery(data[0])
+
+    async def _follow_battery(self, client) -> None:
+        """Best effort: a remote without a Battery Service steers all the same."""
+        if not self.on_battery:
+            return
+        try:
+            self._on_battery(None, await client.read_gatt_char(BATTERY_LEVEL_UUID))
+            await client.start_notify(BATTERY_LEVEL_UUID, self._on_battery)
+        except Exception as exc:  # noqa: BLE001 - no battery level: nothing to show
+            log.debug("VS200 battery level unavailable: %s", exc)
 
     async def run(self) -> None:
         while True:
@@ -156,6 +173,7 @@ class Vs200Input:
                 await client.connect()
                 await client.start_notify(FEA1_UUID, self._on_notify)
                 self._set_state(InputState.CONNECTED)
+                await self._follow_battery(client)
                 await disconnected.wait()
             except Exception as exc:  # noqa: BLE001 - any BLE failure means: search again
                 log.info("VS200 connection failed: %s", exc)
