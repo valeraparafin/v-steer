@@ -80,3 +80,11 @@ def test_core_ignores_a_nonsense_battery_level():
     core.on_input_state(InputState.CONNECTED)
     core.on_battery(255)
     assert core.status.battery is None
+
+
+def test_a_late_battery_level_after_a_drop_is_ignored():
+    """Review of #37: a notification queued before the drop must not refill the cleared level."""
+    core = Core(Config(), FakeEmulator())
+    core.on_input_state(InputState.SEARCHING)
+    core.on_battery(14)
+    assert core.status.battery is None

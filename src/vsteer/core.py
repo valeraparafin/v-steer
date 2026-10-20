@@ -63,8 +63,8 @@ class Core:
             self._update(vs200=state, battery=None)
 
     def on_battery(self, level: int) -> None:
-        if not 0 <= level <= 100:  # a broken read; not worth showing or sending
-            return
+        if not 0 <= level <= 100 or self.status.vs200 is not InputState.CONNECTED:
+            return  # a broken read, or a late one after the remote dropped
         self.emulator.set_battery(level)
         self._update(battery=level)
 
