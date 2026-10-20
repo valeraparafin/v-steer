@@ -362,3 +362,90 @@ def test_release_timer_restarts_when_zwift_comes_back():
     assert not t.update(EmulatorState.ADVERTISING, 550)
     assert not t.update(EmulatorState.ADVERTISING, 1100)
     assert t.update(EmulatorState.STOPPED, 1150)  # STOPPED counts as away
+
+
+def _quick_release(session):
+    session.release_after_s, session.release_check_s = 0.05, 0.01
+    return session
+
+
+async def test_the_remote_is_released_when_zwift_stays_away(tmp_path, caplog):
+    caplog.set_level(logging.INFO, "vsteer")
+    session, events = _session(tmp_path)
+    task = asyncio.create_task(_quick_release(session).run())
+    await until(lambda: session.released)
+    assert FakeInput.instances[0].cancelled
+    assert events.named("status")[-1][1].vs200 is InputState.ASLEEP
+    assert "so the remote can sleep" in caplog.text
+    await session.stop()
+    await task
+
+
+async def test_the_remote_is_searched_again_when_zwift_connects(tmp_path):
+    session, _ = _session(tmp_path)
+    task = asyncio.create_task(_quick_release(session).run())
+    await until(lambda: session.released)
+    FakeEmulator.instances[0].state = EmulatorState.READY
+    await until(lambda: len(FakeInput.instances) == 2 and not session.released)
+    assert not FakeInput.instances[1].cancelled
+    await session.stop()
+    await task
+
+
+async def test_the_remote_is_kept_while_zwift_is_connected(tmp_path):
+    def connected_emulator(*a, **kw):
+        emulator = FakeEmulator(*a, **kw)
+        emulator.start = lambda: _set_ready(emulator)
+        return emulator
+
+    session, _ = _session(tmp_path, emulator_factory=connected_emulator)
+    task = asyncio.create_task(_quick_release(session).run())
+    await until(lambda: FakeInput.instances)
+    await asyncio.sleep(0.2)
+    assert not session.released and not FakeInput.instances[0].cancelled
+    await session.stop()
+    await task
+
+
+async def _set_ready(emulator):
+    emulator.started, emulator.advertised_name = True, emulator.device_name
+    emulator.state = EmulatorState.READY
+
+
+async def test_zwift_connecting_right_after_a_release_starts_the_input(tmp_path):
+    """Review Focus: Zwift pairs while the release waits for the input to stop."""
+    class ConnectsOnCancel(FakeInput):
+        async def run(self):
+            try:
+                await super().run()
+            finally:
+                if len(FakeInput.instances) == 1:
+                    FakeEmulator.instances[0].state = EmulatorState.READY
+
+    session, _ = _session(tmp_path)
+    session._input_factory = ConnectsOnCancel
+    task = asyncio.create_task(_quick_release(session).run())
+    await until(lambda: len(FakeInput.instances) == 2)
+    await asyncio.sleep(0.1)
+    assert not session.released and not FakeInput.instances[1].cancelled
+    await session.stop()
+    await task
+
+
+async def test_pick_another_while_released_searches_the_new_remote(tmp_path):
+    session, _ = _session(tmp_path, pick=_picks("B2:B2:B2:B2:B2:B2"))
+    task = asyncio.create_task(_quick_release(session).run())
+    await until(lambda: session.released)
+    await session.pick_another()
+    assert not session.released
+    assert FakeInput.instances[-1].address == "B2:B2:B2:B2:B2:B2" and not FakeInput.instances[-1].cancelled
+    await session.stop()
+    await task
+
+
+async def test_stop_while_released_returns(tmp_path):
+    session, _ = _session(tmp_path)
+    task = asyncio.create_task(_quick_release(session).run())
+    await until(lambda: session.released)
+    await asyncio.wait_for(session.stop(), 1)
+    assert await asyncio.wait_for(task, 1) == 0
