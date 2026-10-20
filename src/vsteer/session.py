@@ -18,6 +18,8 @@ log = logging.getLogger("vsteer")
 
 HINT_AFTER_S = 60
 PICK_TIMEOUT_S = 120
+RELEASE_AFTER_S = 600  # no Zwift this long: let the remote sleep (#2)
+RELEASE_CHECK_S = 5
 
 
 class Events:
@@ -61,6 +63,30 @@ class HintTimer:
         return True
 
 
+def zwift_connected(state: EmulatorState) -> bool:
+    return state in (EmulatorState.CONNECTED, EmulatorState.READY)
+
+
+class ReleaseTimer:
+    """Fires once after Zwift has not been connected for `after_s`; a held remote never sleeps."""
+
+    def __init__(self, after_s: float = RELEASE_AFTER_S) -> None:
+        self.after_s = after_s
+        self._away_since: float | None = None
+        self._fired = False
+
+    def update(self, state: EmulatorState, now: float) -> bool:
+        if zwift_connected(state):
+            self._away_since, self._fired = None, False
+            return False
+        if self._away_since is None:
+            self._away_since = now
+        if self._fired or now - self._away_since < self.after_s:
+            return False
+        self._fired = True
+        return True
+
+
 async def _hint_loop(emulator: RideEmulator) -> None:
     loop, timer = asyncio.get_running_loop(), HintTimer()
     while True:
@@ -100,6 +126,9 @@ class Session:
         self._input_task: asyncio.Task | None = None
         self._tasks: set[asyncio.Task] = set()
         self._crashed: asyncio.Future | None = None
+        self._released = False
+        self.release_after_s = RELEASE_AFTER_S
+        self.release_check_s = RELEASE_CHECK_S
 
     # --- lifecycle -------------------------------------------------------------
 
@@ -125,6 +154,11 @@ class Session:
             await asyncio.gather(ride, stopper, *(t for t in (updates,) if t), return_exceptions=True)
             self._running = False
             self._done.set()
+
+    @property
+    def released(self) -> bool:
+        """The remote is let go so it can sleep (#2); it is searched again when Zwift connects."""
+        return self._released
 
     async def stop(self) -> None:
         """Make run() return; safe during a pick or a connect."""
@@ -166,6 +200,7 @@ class Session:
         log.info("Advertising '%s' on %s:%d. In Zwift: Paired Devices -> Controls -> pair it.",
                  emulator.advertised_name, lan, emulator.bound_port)
         hint = self._spawn(_hint_loop(emulator))
+        self._spawn(self._release_loop(emulator))
         self._start_input()
         try:
             await self._crashed  # raises if a background job failed unexpectedly; else until cancelled
@@ -205,6 +240,7 @@ class Session:
             await asyncio.gather(self._input_task, return_exceptions=True)
         if self._core:
             self._core.on_input_state(InputState.SEARCHING)
+        self._released = False
         log.info("Pick another remote: press any button on the VS200 you want to steer with ...")
         address = await self._pick_remote()
         if address:
@@ -212,6 +248,28 @@ class Session:
         else:
             log.warning("No VS200 was pressed within 2 minutes; keeping %s", self.cfg.vs200_address)
         self._start_input()
+
+    async def _release_loop(self, emulator) -> None:
+        loop, timer = asyncio.get_running_loop(), ReleaseTimer(self.release_after_s)
+        while True:
+            await asyncio.sleep(self.release_check_s)
+            if self._picking:  # a pick owns the input; it starts the search itself
+                continue
+            if self._released and zwift_connected(emulator.state):
+                self._released = False
+                self._start_input()
+            elif timer.update(emulator.state, loop.time()) and not self._released:
+                await self._release()
+
+    async def _release(self) -> None:
+        if self._input_task:
+            self._input_task.cancel()
+            await asyncio.gather(self._input_task, return_exceptions=True)
+        self._released = True
+        if self._core:
+            self._core.on_input_state(InputState.ASLEEP)
+        log.info("VS200 released: Zwift not connected for %d min, so the remote can sleep. "
+                 "It is searched again when Zwift connects.", round(self.release_after_s / 60))
 
     async def _pick_remote(self) -> str | None:
         self.events.pick_started()

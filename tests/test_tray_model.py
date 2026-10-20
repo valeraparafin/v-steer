@@ -2,7 +2,7 @@ import pytest
 
 from vsteer.core import Status
 from vsteer.ui.icon import IconState
-from vsteer.ui.tray_model import MESSAGES, Notifier, icon_state, status_line, tooltip
+from vsteer.ui.tray_model import MESSAGES, TOOLTIP_MAX, Notifier, icon_state, status_line, tooltip
 from vsteer.vs200 import InputState
 from vsteer.zwift.ride import EmulatorState
 
@@ -59,3 +59,15 @@ def test_pick_another_remote_rearms_pick_and_picked():
     n.rearm("pick", "picked")
     assert n.once("pick") and len(sent) == 3
     assert not n.once("pick")
+
+
+def test_asleep_status_line():
+    """#2: a released remote is shown as sleeping, not as lost."""
+    s = Status(vs200=InputState.ASLEEP, zwift=EmulatorState.ADVERTISING)
+    assert status_line(s) == "Remote: asleep until Zwift connects · Zwift: waiting"
+    assert icon_state(s, None) is IconState.IDLE
+
+
+def test_asleep_tooltip_fits():
+    s = Status(vs200=InputState.ASLEEP, zwift=EmulatorState.ADVERTISING)
+    assert len(tooltip("0.2.1", s, None)) <= TOOLTIP_MAX

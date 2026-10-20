@@ -35,6 +35,9 @@ Run `V-Steer.exe` (or tick **Start with Windows** in its menu), then start Zwift
   **KICKR BIKE PRO 1337** once per ride; it is listed at once.
   Automatic pairing in this case is [being worked on](https://github.com/valeraparafin/v-steer/issues/10).
 
+With no Zwift for 10 min, V-Steer lets the remote go so it can sleep and save its battery. After
+pairing in Zwift, press any button on the remote once to wake it.
+
 ## The tray icon
 
 | icon | means |
