@@ -47,6 +47,7 @@ class RideEmulator:
         self._keepalive_task: asyncio.Task | None = None
         self._pulse_lock = asyncio.Lock()
         self._background: set[asyncio.Task] = set()
+        self.battery: int | None = None  # the remote's level, passed on to Zwift (#36)
         self.dircon = dircon.DirconServer(
             dircon.Service(P.RIDE_SERVICE_UUID, [
                 dircon.Characteristic(P.SYNC_RX_CHAR_UUID, P.DIRCON_PROP_WRITE, on_write=self._on_sync_write),
@@ -74,6 +75,8 @@ class RideEmulator:
         if new is not self._state:
             self._state = new
             log.info("Zwift link: %s", new.value)
+            if new is EmulatorState.READY and self.battery is not None:
+                self._spawn(self._send(P.ASYNC_CHAR_UUID, P.battery_notification(self.battery)))
             if self.on_state_change:
                 self.on_state_change(new)
 
@@ -165,6 +168,8 @@ class RideEmulator:
             log.debug("ignored SYNC_RX write %s", value.hex())
             return
         reply = P.GET_REPLIES.get(object_id)
+        if object_id == 771 and self.battery is not None:
+            reply = P.battery_state_reply(self.battery)
         if reply is None:
             log.info("Zwift asked for data object %d, not served", object_id)
             return
@@ -185,6 +190,14 @@ class RideEmulator:
         task.add_done_callback(self._background.discard)
 
     # --- us -> Zwift ---------------------------------------------------------
+
+    def set_battery(self, level: int) -> None:
+        """Remember the remote's level and tell a ready Zwift when it changes; ignores nonsense."""
+        if not 0 <= level <= 100 or level == self.battery:
+            return
+        self.battery = level
+        if self._state is EmulatorState.READY:
+            self._spawn(self._send(P.ASYNC_CHAR_UUID, P.battery_notification(level)))
 
     async def pulse(self, direction: Tap, ms: int) -> bool:
         """Hold the D-pad `direction` for `ms`, then release; True if Zwift got a pressed frame.

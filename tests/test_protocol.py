@@ -44,3 +44,13 @@ def test_mdns_txt_matches_what_zwift_accepted():
         "manufacturer-data": b"094A0BAAAA",
     }
     assert P.MDNS_SERVICE_TYPE == "_wahoo-fitness-tnp._tcp.local."
+
+
+def test_battery_notification_frame():
+    """#36: Zwift Ride's BATTERY_NOTIF: opcode 0x19, field 1 = newPercLevel."""
+    assert P.battery_notification(25) == bytes([0x19, 0x08, 25])
+
+
+def test_battery_state_reply_carries_the_level():
+    assert P.battery_state_reply(100) == P.GET_REPLIES[771]  # unknown level: what Zwift got before
+    assert P.battery_state_reply(25) == P.GET_REPLIES[771].replace(bytes([0x10, 100]), bytes([0x10, 25]))
