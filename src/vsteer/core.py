@@ -20,6 +20,7 @@ class Status:
     vs200: InputState = InputState.SEARCHING
     zwift: EmulatorState = EmulatorState.STOPPED
     vs200_address: str = ""
+    battery: int | None = None  # the remote's level while connected (#36)
 
 
 class Core:
@@ -56,7 +57,16 @@ class Core:
             await asyncio.gather(*list(self._tasks))
 
     def on_input_state(self, state: InputState) -> None:
-        self._update(vs200=state)
+        if state is InputState.CONNECTED:
+            self._update(vs200=state)
+        else:
+            self._update(vs200=state, battery=None)
+
+    def on_battery(self, level: int) -> None:
+        if not 0 <= level <= 100 or self.status.vs200 is not InputState.CONNECTED:
+            return  # a broken read, or a late one after the remote dropped
+        self.emulator.set_battery(level)
+        self._update(battery=level)
 
     def on_emulator_state(self, state: EmulatorState) -> None:
         self._update(zwift=state)

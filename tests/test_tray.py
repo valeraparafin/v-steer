@@ -2,6 +2,7 @@ import asyncio
 import logging
 import threading
 import time
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import ClassVar
 
@@ -409,3 +410,13 @@ def test_a_session_that_cannot_start_turns_the_icon_red(tmp_path, caplog):
     assert h.icon.icon.tobytes() == render(IconState.ERROR, 32).tobytes()
     assert "no event loop for you" in h.icon.notes[0][0] and "Traceback" in caplog.text
     assert h.quit() == 0
+
+
+def test_low_battery_notifies_once(tmp_path):
+    """#36: one warning per run, not one per status update."""
+    h = Harness(tmp_path).start()
+    low = Status(vs200=InputState.CONNECTED, battery=10)
+    h.session.events.status(low)
+    h.session.events.status(replace(low, battery=9))
+    assert h.icon.notes == [("The steering remote's battery is at 10%. Replace it soon.", "V-Steer")]
+    h.quit()

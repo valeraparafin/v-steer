@@ -355,3 +355,36 @@ async def test_keepalive_survives_an_unexpected_error(monkeypatch):
     assert not emulator._keepalive_task.done()
     await z.close()
     await emulator.stop()
+
+
+async def test_battery_is_sent_when_zwift_becomes_ready(emu):
+    emu.set_battery(25)
+    z = await FakeZwift.connect(emu.bound_port)
+    await z.send(dircon.MSG_ENABLE_NOTIFICATIONS, dircon.uuid_bytes(P.ASYNC_CHAR_UUID) + b"")
+    assert P.battery_notification(25) in frames(await z.drain_packets())
+    await z.close()
+
+
+async def test_battery_change_is_sent_to_a_ready_zwift(emu):
+    z = await FakeZwift.connect(emu.bound_port)
+    await z.session()
+    await z.drain_packets()
+    emu.set_battery(24)
+    assert frames(await z.drain_packets()) == [P.battery_notification(24)]
+    emu.set_battery(24)
+    assert frames(await z.drain_packets()) == []
+    await z.write_sync_rx(bytes.fromhex("00088306"))  # GET 771 now carries the real level
+    await z.recv()
+    reply = await z.recv()
+    assert reply.payload == dircon.uuid_bytes(P.SYNC_TX_CHAR_UUID) + P.battery_state_reply(24)
+    await z.close()
+
+
+async def test_battery_out_of_range_is_ignored(emu):
+    z = await FakeZwift.connect(emu.bound_port)
+    await z.session()
+    await z.drain_packets()
+    emu.set_battery(255)
+    assert emu.battery is None
+    assert frames(await z.drain_packets()) == []
+    await z.close()

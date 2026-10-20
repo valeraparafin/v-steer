@@ -61,12 +61,15 @@ class FakeEmulator:
     async def pulse(self, direction, ms):
         return True
 
+    def set_battery(self, level):
+        self.battery = level
+
 
 class FakeInput:
     instances: ClassVar[list] = []
 
-    def __init__(self, address, on_tap, on_state=None):
-        self.address, self.on_tap, self.on_state = address, on_tap, on_state
+    def __init__(self, address, on_tap, on_state=None, on_battery=None):
+        self.address, self.on_tap, self.on_state, self.on_battery = address, on_tap, on_state, on_battery
         self.cancelled = False
         FakeInput.instances.append(self)
 
@@ -477,5 +480,17 @@ async def test_a_pick_during_the_release_keeps_one_running_input(tmp_path):
     await asyncio.sleep(0.05)
     running = [i for i in FakeInput.instances if not i.cancelled]
     assert [i.address for i in running] == ["B2:B2:B2:B2:B2:B2"]
+    await session.stop()
+    await task
+
+
+async def test_the_input_reports_the_battery_to_the_emulator(tmp_path):
+    """#36: the remote's level reaches the Zwift link through Core."""
+    session, events = _session(tmp_path)
+    task = asyncio.create_task(session.run())
+    await until(lambda: FakeInput.instances)
+    FakeInput.instances[0].on_state(InputState.CONNECTED)
+    FakeInput.instances[0].on_battery(25)
+    assert events.named("status")[-1][1].battery == 25
     await session.stop()
     await task

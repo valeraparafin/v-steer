@@ -33,6 +33,7 @@ RIDE_ON_REPLY = b"RideOn\x01\x03"
 OP_GET = 0x00
 OP_GET_RESPONSE = 0x3C
 OP_RIDE_KEYPAD = 0x23
+OP_BATTERY_NOTIF = 0x19
 
 # D-pad bits in the Ride button map; buttons are active low (bit clear = pressed).
 _DPAD_MASKS = {Tap.LEFT: 0x01, Tap.RIGHT: 0x04}
@@ -80,6 +81,16 @@ def keypad_frame(direction: Tap | None) -> bytes:
 RELEASED_FRAME = keypad_frame(None)
 
 
+def battery_notification(level: int) -> bytes:
+    """BatteryNotification {1: newPercLevel}, as a Zwift Ride sends it when its level changes."""
+    return bytes([OP_BATTERY_NOTIF]) + _pb_uint(1, level)
+
+
+def battery_state_reply(level: int) -> bytes:
+    """GET reply for BATTERY_STATE {chgState: IDLE, percLevel, timeToEmpty: 0, timeToFull: 0}."""
+    return _get_response(771, _pb_uint(1, 0) + _pb_uint(2, level) + _pb_uint(3, 0) + _pb_uint(4, 0))
+
+
 def parse_get(value: bytes) -> int | None:
     """dataObjectId of a GET (opcode 0x00, protobuf {1: id}), or None if not a GET."""
     if len(value) < 2 or value[0] != OP_GET:
@@ -112,6 +123,6 @@ GET_REPLIES: dict[int, bytes] = {
     16: _get_response(16, _pb_uint(1, 0)),
     # PAGE_CONTROLLER_INPUT_CONFIG {supportedDigitalInputs: 4607, supportedAnalogInputs: 0}
     1024: _get_response(1024, _pb_uint(1, 4607) + _pb_uint(2, 0)),
-    # BATTERY_STATE {chgState: IDLE, percLevel: 100, timeToEmpty: 0, timeToFull: 0}
-    771: _get_response(771, _pb_uint(1, 0) + _pb_uint(2, 100) + _pb_uint(3, 0) + _pb_uint(4, 0)),
+    # BATTERY_STATE while the remote's level is unknown; the emulator serves the real one (#36)
+    771: battery_state_reply(100),
 }

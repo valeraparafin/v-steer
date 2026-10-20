@@ -2,7 +2,15 @@ import pytest
 
 from vsteer.core import Status
 from vsteer.ui.icon import IconState
-from vsteer.ui.tray_model import MESSAGES, TOOLTIP_MAX, Notifier, icon_state, status_line, tooltip
+from vsteer.ui.tray_model import (
+    MESSAGES,
+    TOOLTIP_MAX,
+    Notifier,
+    battery_low,
+    icon_state,
+    status_line,
+    tooltip,
+)
 from vsteer.vs200 import InputState
 from vsteer.zwift.ride import EmulatorState
 
@@ -71,3 +79,16 @@ def test_asleep_status_line():
 def test_asleep_tooltip_fits():
     s = Status(vs200=InputState.ASLEEP, zwift=EmulatorState.ADVERTISING)
     assert len(tooltip("0.2.1", s, None)) <= TOOLTIP_MAX
+
+
+def test_status_line_shows_the_battery():
+    s = Status(vs200=InputState.CONNECTED, zwift=EmulatorState.READY, battery=25)
+    assert status_line(s) == "Remote: connected 25% · Zwift: ready"
+    assert status_line(Status(vs200=InputState.CONNECTED, zwift=EmulatorState.READY)) == (
+        "Remote: connected · Zwift: ready")
+
+
+def test_battery_low_threshold():
+    assert battery_low(Status(vs200=InputState.CONNECTED, battery=15))
+    assert not battery_low(Status(vs200=InputState.CONNECTED, battery=16))
+    assert not battery_low(Status(vs200=InputState.CONNECTED))
