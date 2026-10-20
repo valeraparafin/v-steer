@@ -9,12 +9,14 @@ from ..vs200 import InputState
 from ..zwift.ride import EmulatorState
 from .icon import IconState
 
+LOW_BATTERY = 15  # % at which the remote's battery is worth a warning (#36)
 TOOLTIP_MAX = 127  # Windows cuts the tray tooltip (szTip holds 128 characters with the terminator)
 
 MESSAGES = {
     "pick": "Press a button on the VS200 you want to steer with.",
     "picked": "Remote saved. In Zwift: Paired Devices → Controls → {device}.",
     "update": "V-Steer {tag} is out. Download it from the V-Steer menu.",
+    "battery": "The steering remote's battery is at {level}%. Replace it soon.",
     "error": "V-Steer can't steer: {reason}. Open the log from the V-Steer menu.",
 }
 
@@ -39,8 +41,14 @@ def status_line(status: Status) -> str:
         remote = "asleep until Zwift connects"
     else:
         remote = "connected" if _remote_ok(status) else "searching"
+        if _remote_ok(status) and status.battery is not None:
+            remote += f" {status.battery}%"
     zwift = "ready" if _zwift_ok(status) else "waiting"
     return f"Remote: {remote} · Zwift: {zwift}"
+
+
+def battery_low(status: Status) -> bool:
+    return status.battery is not None and status.battery <= LOW_BATTERY
 
 
 def tooltip(version: str, status: Status, error: str | None) -> str:

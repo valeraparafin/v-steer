@@ -25,7 +25,7 @@ from .. import __version__, autostart, update
 from ..core import Status
 from ..session import Events, Session
 from .icon import IconState, render
-from .tray_model import Notifier, icon_state, status_line, tooltip
+from .tray_model import Notifier, battery_low, icon_state, status_line, tooltip
 
 log = logging.getLogger("vsteer")
 
@@ -94,6 +94,8 @@ class TrayEvents(Events):
 
     def status(self, s: Status) -> None:
         self._app._set(status=s)
+        if battery_low(s):
+            self._app.notifier.once("battery", level=s.battery)
 
     def pick_started(self) -> None:
         self._app.notifier.once("pick")

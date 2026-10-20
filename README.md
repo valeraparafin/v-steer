@@ -47,6 +47,9 @@ pairing in Zwift, press any button on the remote once to wake it.
 | <img src="docs/tray/idle.png" width="24"> | neither is connected yet |
 | <img src="docs/tray/error.png" width="24"> | V-Steer can't steer; **Open log** in the menu says why |
 
+Hover the icon to see the remote's battery level (it is passed on to Zwift too); a notification
+warns when it drops to 15%.
+
 Right-click the icon for the menu: **Swap + and −**, **Pick another remote…**, **Start with
 Windows**, **Open log**, **Open settings folder**, **Help** and **Quit**.
 

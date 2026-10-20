@@ -40,6 +40,10 @@ a `Session` on one background thread with its own asyncio loop. The session repo
 tooltip and menu. Menu clicks go the other way as coroutines submitted to the session's loop.
 `--console` runs the same `Session` with `ConsoleEvents` on the main thread instead.
 
+**Battery level.** After connecting, `Vs200Input` reads the standard Battery Level (`0x2A19`) and
+follows its notifications. `Core` keeps it in `Status.battery`; the emulator answers Zwift's
+`BATTERY_STATE` request with it and sends a `BATTERY_NOTIF` (`0x19`) frame when it changes.
+
 **Letting the remote sleep.** A connected VS200 never sleeps, so it would drain its battery all day.
 When Zwift has not been connected for 10 min (`RELEASE_AFTER_S`), the session cancels the remote's
 input task and reports it as `asleep`; when Zwift connects again, it starts searching for the remote.
