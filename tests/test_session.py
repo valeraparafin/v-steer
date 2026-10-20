@@ -6,7 +6,7 @@ import pytest
 
 from vsteer import config
 from vsteer.config import Config
-from vsteer.session import Events, HintTimer, Session
+from vsteer.session import Events, HintTimer, ReleaseTimer, Session
 from vsteer.update import RELEASES_PAGE
 from vsteer.vs200 import InputState
 from vsteer.zwift.ride import EmulatorState
@@ -344,3 +344,21 @@ async def test_first_run_names_the_device_zwift_will_list(tmp_path):
     assert events.named("picked") == [("picked", "A1:A1:A1:A1:A1:A1", "KICKR BIKE PRO 1337 2")]
     await session.stop()
     await task
+
+
+def test_release_timer_fires_once_after_ten_minutes_away():
+    """#2: the remote is let go after 10 min without Zwift, once per away period."""
+    t = ReleaseTimer(after_s=600)
+    assert not t.update(EmulatorState.ADVERTISING, 0)
+    assert not t.update(EmulatorState.ADVERTISING, 599)
+    assert t.update(EmulatorState.ADVERTISING, 600)
+    assert not t.update(EmulatorState.ADVERTISING, 700)
+
+
+def test_release_timer_restarts_when_zwift_comes_back():
+    t = ReleaseTimer(after_s=600)
+    t.update(EmulatorState.ADVERTISING, 0)
+    assert not t.update(EmulatorState.READY, 500)
+    assert not t.update(EmulatorState.ADVERTISING, 550)
+    assert not t.update(EmulatorState.ADVERTISING, 1100)
+    assert t.update(EmulatorState.STOPPED, 1150)  # STOPPED counts as away

@@ -18,6 +18,8 @@ log = logging.getLogger("vsteer")
 
 HINT_AFTER_S = 60
 PICK_TIMEOUT_S = 120
+RELEASE_AFTER_S = 600  # no Zwift this long: let the remote sleep (#2)
+RELEASE_CHECK_S = 5
 
 
 class Events:
@@ -58,6 +60,30 @@ class HintTimer:
         if self._hinted or now - self._away_since < self.after_s:
             return False
         self._hinted = True
+        return True
+
+
+def zwift_connected(state: EmulatorState) -> bool:
+    return state in (EmulatorState.CONNECTED, EmulatorState.READY)
+
+
+class ReleaseTimer:
+    """Fires once after Zwift has not been connected for `after_s`; a held remote never sleeps."""
+
+    def __init__(self, after_s: float = RELEASE_AFTER_S) -> None:
+        self.after_s = after_s
+        self._away_since: float | None = None
+        self._fired = False
+
+    def update(self, state: EmulatorState, now: float) -> bool:
+        if zwift_connected(state):
+            self._away_since, self._fired = None, False
+            return False
+        if self._away_since is None:
+            self._away_since = now
+        if self._fired or now - self._away_since < self.after_s:
+            return False
+        self._fired = True
         return True
 
 
