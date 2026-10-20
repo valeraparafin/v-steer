@@ -449,3 +449,33 @@ async def test_stop_while_released_returns(tmp_path):
     await until(lambda: session.released)
     await asyncio.wait_for(session.stop(), 1)
     assert await asyncio.wait_for(task, 1) == 0
+
+
+async def test_a_pick_during_the_release_keeps_one_running_input(tmp_path):
+    """Review of #35: a pick that starts while the release waits for the input to stop wins."""
+    gate = asyncio.Event()
+
+    class SlowToStop(FakeInput):
+        async def run(self):
+            try:
+                await super().run()
+            finally:
+                if len(FakeInput.instances) == 1:
+                    await gate.wait()
+
+    session, _ = _session(tmp_path, pick=_picks("B2:B2:B2:B2:B2:B2"))
+    session._input_factory = SlowToStop
+    task = asyncio.create_task(_quick_release(session).run())
+    await until(lambda: FakeInput.instances and FakeInput.instances[0].cancelled)
+    pick = asyncio.create_task(session.pick_another())
+    await asyncio.sleep(0.02)
+    gate.set()
+    await pick
+    await asyncio.sleep(0.03)
+    assert not session.released
+    FakeEmulator.instances[0].state = EmulatorState.READY
+    await asyncio.sleep(0.05)
+    running = [i for i in FakeInput.instances if not i.cancelled]
+    assert [i.address for i in running] == ["B2:B2:B2:B2:B2:B2"]
+    await session.stop()
+    await task
