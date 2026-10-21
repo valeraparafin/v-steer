@@ -2,7 +2,7 @@ from dataclasses import fields
 
 import pytest
 
-from vsteer.config import KNOWN_KEYS, SETTINGS, Config, ConfigError, load, save
+from vsteer.config import KNOWN_KEYS, SETTINGS, Config, ConfigError, Setting, by_section, load, save
 
 
 def test_missing_file_is_created_with_defaults(tmp_path):
@@ -208,3 +208,12 @@ def test_saved_file_matches_the_old_template(tmp_path):
     def squeeze(text):
         return [" ".join(line.split()) for line in text.splitlines()]
     assert squeeze(p.read_text(encoding="utf-8")) == squeeze(old)
+
+
+def test_settings_of_one_section_need_not_be_adjacent():
+    """Review of #41: a setting appended later to an existing section joins it, once."""
+    settings = (Setting("vs200", "address", "vs200_address"), Setting("steer", "pulse_ms", "pulse_ms"),
+                Setting("vs200", "swap", "swap"))
+    grouped = by_section(settings)
+    assert list(grouped) == ["vs200", "steer"]
+    assert [s.key for s in grouped["vs200"]] == ["address", "swap"]

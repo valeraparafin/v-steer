@@ -8,8 +8,6 @@ import os
 import re
 import tomllib
 from dataclasses import dataclass
-from itertools import groupby
-from operator import attrgetter
 from pathlib import Path
 
 from .zwift.protocol import DEFAULT_DEVICE_NAME
@@ -72,10 +70,18 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("network", "address", "network_address", "empty = auto"),
     Setting("updates", "check", "check_updates", "look for a new version on GitHub at start"),
 )
+
+
+def by_section(settings: tuple[Setting, ...]) -> dict[str, list[Setting]]:
+    """Settings per section, in first-seen order; a section's settings need not be adjacent."""
+    grouped: dict[str, list[Setting]] = {}
+    for s in settings:
+        grouped.setdefault(s.section, []).append(s)
+    return grouped
+
+
 # Every key the file holds: anything else in it is a typo or left over.
-KNOWN_KEYS: dict[str, set[str]] = {
-    section: {s.key for s in group} for section, group in groupby(SETTINGS, key=attrgetter("section"))
-}
+KNOWN_KEYS: dict[str, set[str]] = {section: {s.key for s in group} for section, group in by_section(SETTINGS).items()}
 
 
 def _toml_str(value: str) -> str:
@@ -102,7 +108,7 @@ def _render(cfg: Config) -> str:
         text = f"{s.key} = {_toml_value(getattr(cfg, s.field))}"
         return f"{text}  # {s.comment}" if s.comment else text
 
-    blocks = ([f"[{section}]", *map(line, group)] for section, group in groupby(SETTINGS, key=attrgetter("section")))
+    blocks = ([f"[{section}]", *map(line, group)] for section, group in by_section(SETTINGS).items())
     return "\n\n".join("\n".join(block) for block in blocks) + "\n"
 
 

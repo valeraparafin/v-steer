@@ -309,6 +309,7 @@ class TrayApp:
                 self._autostart_enabled = self._autostart.is_enabled()
             return self._autostart_enabled
         except OSError:
+            self._autostart_enabled = False  # unreadable: shown unticked, not retried on every refresh
             return False
 
     def _toggle_autostart(self) -> None:
