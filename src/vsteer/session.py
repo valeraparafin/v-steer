@@ -11,7 +11,7 @@ from pathlib import Path
 
 from . import config, net, update
 from .core import Core, Status
-from .vs200 import SCAN_S, InputState, Vs200Input, _bleak_find, pick_remote
+from .vs200 import SCAN_S, InputState, Vs200Input, find_remote, pick_remote
 from .zwift.ride import EmulatorState, RideEmulator
 
 log = logging.getLogger("vsteer")
@@ -146,7 +146,7 @@ class Session:
         self._emulator_factory = emulator_factory
         self._lan = lan
         self._check_update = check_update
-        self._find_device = find_device or _bleak_find
+        self._find_device = find_device or find_remote
         self._stop_requested = asyncio.Event()
         self._done = asyncio.Event()
         self._running = False
@@ -286,10 +286,14 @@ class Session:
 
     async def _release_loop(self, emulator) -> None:
         loop, timer = asyncio.get_running_loop(), ReleaseTimer(self.release_after_s)
+        was_released = False
         while True:
             await asyncio.sleep(self.release_check_s)
             if self._picking:  # a pick owns the input; it starts the search itself
                 continue
+            if was_released and not self._released:  # back by a press or a pick: count 10 min anew
+                timer = ReleaseTimer(self.release_after_s)
+            was_released = self._released
             if self._released and zwift_connected(emulator.state):
                 await self._stop_wake_watch()
                 self._released = False
@@ -320,9 +324,10 @@ class Session:
         while True:
             try:
                 seen = await self._find_device(self.cfg.vs200_address, self.wake_scan_s) is not None
-            except Exception as exc:  # noqa: BLE001 - radio off: counts as not seen, try again
+            except Exception as exc:  # noqa: BLE001 - radio off: says nothing about the remote
                 log.debug("wake watch scan failed: %s", exc)
-                seen = False
+                await asyncio.sleep(self.wake_pause_s)
+                continue
             if watch.update(seen, loop.time()):
                 log.info("VS200 woken by a button press: connecting")
                 self._wake_task, self._released = None, False

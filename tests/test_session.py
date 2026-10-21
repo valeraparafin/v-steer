@@ -621,3 +621,44 @@ async def test_stop_during_the_wake_watch_returns(tmp_path):
     await until(lambda: session.released)
     await asyncio.wait_for(session.stop(), 1)
     assert await asyncio.wait_for(task, 1) == 0
+
+
+async def test_a_woken_remote_is_released_again_without_zwift(tmp_path):
+    """Review of #40: a wake press without a ride must not keep the remote awake for good."""
+    remote = {"visible": True}
+
+    async def find(address, timeout):
+        await asyncio.sleep(timeout)
+        return object() if remote["visible"] else None
+
+    session, _ = _session(tmp_path, find_device=find)
+    task = asyncio.create_task(_quick_release(session).run())
+    await until(lambda: session.released)
+    remote["visible"] = False
+    await asyncio.sleep(0.2)
+    remote["visible"] = True
+    await until(lambda: len(FakeInput.instances) == 2)
+    await until(lambda: session.released and FakeInput.instances[1].cancelled)
+    await session.stop()
+    await task
+
+
+async def test_scan_errors_do_not_count_as_sleep(tmp_path):
+    """Review of #40: Bluetooth off for a while is not the remote falling asleep."""
+    radio = {"on": False}
+
+    async def find(address, timeout):
+        await asyncio.sleep(timeout)
+        if not radio["on"]:
+            raise OSError("Bluetooth is off")
+        return object()  # still awake and advertising
+
+    session, _ = _session(tmp_path, find_device=find)
+    task = asyncio.create_task(_quick_release(session).run())
+    await until(lambda: session.released)
+    await asyncio.sleep(0.2)
+    radio["on"] = True
+    await asyncio.sleep(0.2)
+    assert session.released and len(FakeInput.instances) == 1
+    await session.stop()
+    await task
