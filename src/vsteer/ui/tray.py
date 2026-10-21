@@ -140,7 +140,11 @@ class TrayApp:
 
     def run(self) -> int:
         """Show the tray and ride until Quit. Blocks; call it on the main thread."""
-        self._show(self._start_session)
+        try:
+            self._show(self._start_session)
+        except KeyboardInterrupt:  # Ctrl+C from run.cmd: stop like Quit, or mDNS and the remote stay held
+            self._quitting = True
+            self._shutdown()
         return 0
 
     def run_error(self, reason: str) -> int:

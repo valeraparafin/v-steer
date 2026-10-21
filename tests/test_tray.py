@@ -433,3 +433,17 @@ def test_menu_is_rebuilt_only_when_its_content_changes(tmp_path):
     events.status(Status(vs200=InputState.CONNECTED, zwift=EmulatorState.READY, battery=50))
     assert h.icon.menu_updates == before + 1
     h.quit()
+
+
+def test_ctrl_c_in_the_tray_stops_the_session(tmp_path):
+    """#28: Ctrl+C from run.cmd goes through Quit's shutdown, not straight out of main()."""
+    class InterruptedIcon(FakeIcon):
+        def run(self, setup=None):
+            threading.Thread(target=setup, args=(self,)).start()
+            wait_for(lambda: h.sessions and h.sessions[0].calls)
+            raise KeyboardInterrupt
+
+    h = Harness(tmp_path)
+    h.app._backend = SimpleNamespace(Icon=InterruptedIcon, Menu=FakeMenu, MenuItem=FakeMenuItem)
+    assert h.app.run() == 0
+    assert "stop" in h.sessions[0].calls
