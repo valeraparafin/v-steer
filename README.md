@@ -97,8 +97,12 @@ then quit and start the app again.
 
 ## What's next
 
-More remotes and apps. See the
-[milestones](https://github.com/valeraparafin/v-steer/milestones); ideas are welcome as
+- a clearer tray: what V-Steer is waiting for, and the remote's charge on the icon;
+- actions on double presses (Ride On, U-turn, ...), chosen in the menu;
+- more cycling apps, starting with MyWhoosh;
+- macOS.
+
+See the [milestones](https://github.com/valeraparafin/v-steer/milestones); ideas are welcome as
 [issues](https://github.com/valeraparafin/v-steer/issues).
 
 ## More
