@@ -418,5 +418,5 @@ def test_low_battery_notifies_once(tmp_path):
     low = Status(vs200=InputState.CONNECTED, battery=10)
     h.session.events.status(low)
     h.session.events.status(replace(low, battery=9))
-    assert h.icon.notes == [("The steering remote's battery is at 10%. Replace it soon.", "V-Steer")]
+    assert h.icon.notes == [("The steering remote's battery is at 10%. Charge it soon.", "V-Steer")]
     h.quit()

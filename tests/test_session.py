@@ -6,7 +6,7 @@ import pytest
 
 from vsteer import config
 from vsteer.config import Config
-from vsteer.session import Events, HintTimer, ReleaseTimer, Session
+from vsteer.session import Events, HintTimer, ReleaseTimer, Session, WakeWatch
 from vsteer.update import RELEASES_PAGE
 from vsteer.vs200 import InputState
 from vsteer.zwift.ride import EmulatorState
@@ -96,8 +96,12 @@ async def _no_update():
     return None
 
 
+async def _never_found(address, timeout):
+    await asyncio.sleep(timeout)
+
+
 def _session(tmp_path, cfg=None, *, pick=None, lan="192.168.1.140", events=None, emulator_factory=None,
-             check_update=_no_update):
+             check_update=_no_update, find_device=_never_found):
     FakeEmulator.instances, FakeInput.instances = [], []
 
     async def never_pick(timeout):
@@ -106,7 +110,8 @@ def _session(tmp_path, cfg=None, *, pick=None, lan="192.168.1.140", events=None,
     events = events or RecordingEvents()
     session = Session(cfg or Config(vs200_address="AA:AA:AA:AA:AA:AA"), tmp_path / "config.toml", events,
                       pick=pick or never_pick, input_factory=FakeInput,
-                      emulator_factory=emulator_factory or FakeEmulator, lan=lan, check_update=check_update)
+                      emulator_factory=emulator_factory or FakeEmulator, lan=lan, check_update=check_update,
+                      find_device=find_device)
     return session, events
 
 
@@ -369,6 +374,7 @@ def test_release_timer_restarts_when_zwift_comes_back():
 
 def _quick_release(session):
     session.release_after_s, session.release_check_s = 0.05, 0.01
+    session.asleep_after_s, session.wake_pause_s, session.wake_scan_s = 0.05, 0.005, 0.005
     return session
 
 
@@ -492,5 +498,167 @@ async def test_the_input_reports_the_battery_to_the_emulator(tmp_path):
     FakeInput.instances[0].on_state(InputState.CONNECTED)
     FakeInput.instances[0].on_battery(25)
     assert events.named("status")[-1][1].battery == 25
+    await session.stop()
+    await task
+
+
+def test_wake_watch_waits_for_sleep_first():
+    """#39: a remote still advertising after the release is not 'woken'; it must sleep first."""
+    w = WakeWatch(asleep_after_s=30)
+    assert not w.update(True, 0)
+    assert not w.update(True, 100)
+    assert not w.update(True, 1000)
+    assert not w.asleep
+
+
+def test_wake_watch_ignores_a_short_gap():
+    w = WakeWatch(asleep_after_s=30)
+    w.update(True, 0)
+    w.update(False, 10)
+    w.update(False, 29)
+    assert not w.asleep
+    assert not w.update(True, 35)
+
+
+def test_wake_watch_fires_once_after_sleep():
+    w = WakeWatch(asleep_after_s=30)
+    w.update(True, 0)
+    w.update(False, 10)
+    w.update(False, 41)
+    assert w.asleep
+    assert w.update(True, 50)
+    assert not w.update(True, 55)
+
+
+def _sightings(*seen):
+    """A find_device that reports the remote per `seen`, then keeps the last answer."""
+    answers, calls = list(seen), []
+
+    async def find(address, timeout):
+        calls.append(address)
+        await asyncio.sleep(timeout)
+        found = answers.pop(0) if len(answers) > 1 else answers[0]
+        return object() if found else None
+    find.calls = calls
+    return find
+
+
+async def test_a_woken_remote_reconnects_without_zwift(tmp_path, caplog):
+    """#39: a button press on the sleeping remote connects it, Zwift or not."""
+    caplog.set_level(logging.INFO, "vsteer")
+    remote = {"visible": True}
+
+    async def find(address, timeout):
+        await asyncio.sleep(timeout)
+        return object() if remote["visible"] else None
+
+    session, _ = _session(tmp_path, find_device=find)
+    task = asyncio.create_task(_quick_release(session).run())
+    await until(lambda: session.released)
+    remote["visible"] = False  # it fell asleep
+    await asyncio.sleep(0.2)
+    assert session.released
+    remote["visible"] = True  # a button woke it
+    await until(lambda: not session.released and len(FakeInput.instances) == 2)
+    assert not FakeInput.instances[1].cancelled
+    assert "woken by a button press" in caplog.text
+    await session.stop()
+    await task
+
+
+async def test_a_remote_that_never_sleeps_is_not_reconnected(tmp_path):
+    session, _ = _session(tmp_path, find_device=_sightings(True))
+    task = asyncio.create_task(_quick_release(session).run())
+    await until(lambda: session.released)
+    await asyncio.sleep(0.3)
+    assert session.released and len(FakeInput.instances) == 1
+    await session.stop()
+    await task
+
+
+async def test_zwift_connecting_stops_the_wake_watch(tmp_path):
+    find = _sightings(False)
+    session, _ = _session(tmp_path, find_device=find)
+    task = asyncio.create_task(_quick_release(session).run())
+    await until(lambda: session.released and find.calls)
+    FakeEmulator.instances[0].state = EmulatorState.READY
+    await until(lambda: not session.released)
+    calls = len(find.calls)
+    await asyncio.sleep(0.1)
+    assert len(find.calls) == calls
+    assert len([i for i in FakeInput.instances if not i.cancelled]) == 1
+    await session.stop()
+    await task
+
+
+async def test_pick_another_stops_the_wake_watch(tmp_path):
+    started = asyncio.Event()
+
+    async def slow_pick(timeout):
+        started.set()
+        await asyncio.Event().wait()
+
+    find = _sightings(False)
+    session, _ = _session(tmp_path, pick=slow_pick, find_device=find)
+    task = asyncio.create_task(_quick_release(session).run())
+    await until(lambda: session.released and find.calls)
+    pick = asyncio.create_task(session.pick_another())
+    await started.wait()
+    calls = len(find.calls)
+    await asyncio.sleep(0.1)
+    assert len(find.calls) == calls
+    await asyncio.wait_for(session.stop(), 1)
+    assert await asyncio.wait_for(task, 1) == 0
+    await asyncio.wait_for(pick, 1)
+
+
+async def test_stop_during_the_wake_watch_returns(tmp_path):
+    async def blocked(address, timeout):
+        await asyncio.Event().wait()
+
+    session, _ = _session(tmp_path, find_device=blocked)
+    task = asyncio.create_task(_quick_release(session).run())
+    await until(lambda: session.released)
+    await asyncio.wait_for(session.stop(), 1)
+    assert await asyncio.wait_for(task, 1) == 0
+
+
+async def test_a_woken_remote_is_released_again_without_zwift(tmp_path):
+    """Review of #40: a wake press without a ride must not keep the remote awake for good."""
+    remote = {"visible": True}
+
+    async def find(address, timeout):
+        await asyncio.sleep(timeout)
+        return object() if remote["visible"] else None
+
+    session, _ = _session(tmp_path, find_device=find)
+    task = asyncio.create_task(_quick_release(session).run())
+    await until(lambda: session.released)
+    remote["visible"] = False
+    await asyncio.sleep(0.2)
+    remote["visible"] = True
+    await until(lambda: len(FakeInput.instances) == 2)
+    await until(lambda: session.released and FakeInput.instances[1].cancelled)
+    await session.stop()
+    await task
+
+
+async def test_scan_errors_do_not_count_as_sleep(tmp_path):
+    """Review of #40: Bluetooth off for a while is not the remote falling asleep."""
+    radio = {"on": False}
+
+    async def find(address, timeout):
+        await asyncio.sleep(timeout)
+        if not radio["on"]:
+            raise OSError("Bluetooth is off")
+        return object()  # still awake and advertising
+
+    session, _ = _session(tmp_path, find_device=find)
+    task = asyncio.create_task(_quick_release(session).run())
+    await until(lambda: session.released)
+    await asyncio.sleep(0.2)
+    radio["on"] = True
+    await asyncio.sleep(0.2)
+    assert session.released and len(FakeInput.instances) == 1
     await session.stop()
     await task

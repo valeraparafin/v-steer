@@ -28,10 +28,10 @@ def parse_packet(data: bytes) -> Tap | None:
 class InputState(Enum):
     SEARCHING = "searching"
     CONNECTED = "connected"
-    ASLEEP = "asleep"  # let go so it can sleep; searched again when Zwift connects
+    ASLEEP = "asleep"  # let go so it can sleep; a button press or Zwift brings it back
 
 
-async def _bleak_find(address: str, timeout: float):
+async def find_remote(address: str, timeout: float):
     from bleak import BleakScanner
 
     return await BleakScanner.find_device_by_address(address, timeout=timeout)
@@ -113,7 +113,7 @@ class Vs200Input:
         self.on_tap = on_tap
         self.on_state = on_state
         self.on_battery = on_battery
-        self._find = find_device or _bleak_find
+        self._find = find_device or find_remote
         self._client_factory = client_factory or _bleak_client
         self.retry_s = retry_s
         self._state: InputState | None = None

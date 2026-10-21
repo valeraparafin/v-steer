@@ -72,7 +72,7 @@ def test_pick_another_remote_rearms_pick_and_picked():
 def test_asleep_status_line():
     """#2: a released remote is shown as sleeping, not as lost."""
     s = Status(vs200=InputState.ASLEEP, zwift=EmulatorState.ADVERTISING)
-    assert status_line(s) == "Remote: asleep until Zwift connects · Zwift: waiting"
+    assert status_line(s) == "Remote: asleep, press a button to wake · Zwift: waiting"
     assert icon_state(s, None) is IconState.IDLE
 
 

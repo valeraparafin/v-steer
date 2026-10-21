@@ -16,7 +16,7 @@ MESSAGES = {
     "pick": "Press a button on the VS200 you want to steer with.",
     "picked": "Remote saved. In Zwift: Paired Devices → Controls → {device}.",
     "update": "V-Steer {tag} is out. Download it from the V-Steer menu.",
-    "battery": "The steering remote's battery is at {level}%. Replace it soon.",
+    "battery": "The steering remote's battery is at {level}%. Charge it soon.",
     "error": "V-Steer can't steer: {reason}. Open the log from the V-Steer menu.",
 }
 
@@ -38,7 +38,7 @@ def icon_state(status: Status, error: str | None) -> IconState:
 
 def status_line(status: Status) -> str:
     if status.vs200 is InputState.ASLEEP:
-        remote = "asleep until Zwift connects"
+        remote = "asleep, press a button to wake"
     else:
         remote = "connected" if _remote_ok(status) else "searching"
         if _remote_ok(status) and status.battery is not None:

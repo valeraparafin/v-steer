@@ -11,7 +11,7 @@ from pathlib import Path
 
 from . import config, net, update
 from .core import Core, Status
-from .vs200 import InputState, Vs200Input, pick_remote
+from .vs200 import SCAN_S, InputState, Vs200Input, find_remote, pick_remote
 from .zwift.ride import EmulatorState, RideEmulator
 
 log = logging.getLogger("vsteer")
@@ -20,6 +20,8 @@ HINT_AFTER_S = 60
 PICK_TIMEOUT_S = 120
 RELEASE_AFTER_S = 600  # no Zwift this long: let the remote sleep (#2)
 RELEASE_CHECK_S = 5
+ASLEEP_AFTER_S = 30  # a released remote unseen this long has gone to sleep (#39)
+WAKE_PAUSE_S = 1
 
 
 class Events:
@@ -87,6 +89,33 @@ class ReleaseTimer:
         return True
 
 
+class WakeWatch:
+    """Tells a remote woken by a button press from one still awake after its release.
+
+    It fires once, on the first sighting after the remote has been unseen for `asleep_after_s`:
+    reconnecting before it slept would keep it awake, which the release is there to stop.
+    """
+
+    def __init__(self, asleep_after_s: float = ASLEEP_AFTER_S) -> None:
+        self.asleep_after_s = asleep_after_s
+        self._last_seen: float | None = None
+        self._asleep = False
+
+    @property
+    def asleep(self) -> bool:
+        return self._asleep
+
+    def update(self, seen: bool, now: float) -> bool:
+        if self._last_seen is None:  # just released: it was connected a moment ago
+            self._last_seen = now
+        if not seen:
+            self._asleep = self._asleep or now - self._last_seen >= self.asleep_after_s
+            return False
+        self._last_seen = now
+        woken, self._asleep = self._asleep, False
+        return woken
+
+
 async def _hint_loop(emulator: RideEmulator) -> None:
     loop, timer = asyncio.get_running_loop(), HintTimer()
     while True:
@@ -108,7 +137,7 @@ async def _hint_loop(emulator: RideEmulator) -> None:
 class Session:
     def __init__(self, cfg: config.Config, cfg_path: Path, events: Events, *, pick=pick_remote,
                  input_factory=Vs200Input, emulator_factory=RideEmulator, lan: str | None = None,
-                 check_update=update.check_for_update) -> None:
+                 check_update=update.check_for_update, find_device=None) -> None:
         self.cfg = cfg
         self.cfg_path = cfg_path
         self.events = events
@@ -117,6 +146,7 @@ class Session:
         self._emulator_factory = emulator_factory
         self._lan = lan
         self._check_update = check_update
+        self._find_device = find_device or find_remote
         self._stop_requested = asyncio.Event()
         self._done = asyncio.Event()
         self._running = False
@@ -129,6 +159,10 @@ class Session:
         self._released = False
         self.release_after_s = RELEASE_AFTER_S
         self.release_check_s = RELEASE_CHECK_S
+        self.asleep_after_s = ASLEEP_AFTER_S
+        self.wake_pause_s = WAKE_PAUSE_S
+        self.wake_scan_s = SCAN_S
+        self._wake_task: asyncio.Task | None = None
 
     # --- lifecycle -------------------------------------------------------------
 
@@ -240,6 +274,7 @@ class Session:
             await asyncio.gather(self._input_task, return_exceptions=True)
         if self._core:
             self._core.on_input_state(InputState.SEARCHING)
+        await self._stop_wake_watch()  # one scanner at a time: the pick scans next
         self._released = False
         log.info("Pick another remote: press any button on the VS200 you want to steer with ...")
         address = await self._pick_remote()
@@ -251,11 +286,16 @@ class Session:
 
     async def _release_loop(self, emulator) -> None:
         loop, timer = asyncio.get_running_loop(), ReleaseTimer(self.release_after_s)
+        was_released = False
         while True:
             await asyncio.sleep(self.release_check_s)
             if self._picking:  # a pick owns the input; it starts the search itself
                 continue
+            if was_released and not self._released:  # back by a press or a pick: count 10 min anew
+                timer = ReleaseTimer(self.release_after_s)
+            was_released = self._released
             if self._released and zwift_connected(emulator.state):
+                await self._stop_wake_watch()
                 self._released = False
                 self._start_input()
             elif timer.update(emulator.state, loop.time()) and not self._released:
@@ -269,7 +309,31 @@ class Session:
         if self._core:
             self._core.on_input_state(InputState.ASLEEP)
         log.info("VS200 released: Zwift not connected for %d min, so the remote can sleep. "
-                 "It is searched again when Zwift connects.", round(self.release_after_s / 60))
+                 "Press a button on it, or connect Zwift, to use it again.", round(self.release_after_s / 60))
+        self._wake_task = self._spawn(self._wake_watch())
+
+    async def _stop_wake_watch(self) -> None:
+        task, self._wake_task = self._wake_task, None
+        if task and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    async def _wake_watch(self) -> None:
+        """Scan for the released remote; connect once it was asleep and a button woke it (#39)."""
+        loop, watch = asyncio.get_running_loop(), WakeWatch(self.asleep_after_s)
+        while True:
+            try:
+                seen = await self._find_device(self.cfg.vs200_address, self.wake_scan_s) is not None
+            except Exception as exc:  # noqa: BLE001 - radio off: says nothing about the remote
+                log.debug("wake watch scan failed: %s", exc)
+                await asyncio.sleep(self.wake_pause_s)
+                continue
+            if watch.update(seen, loop.time()):
+                log.info("VS200 woken by a button press: connecting")
+                self._wake_task, self._released = None, False
+                self._start_input()
+                return
+            await asyncio.sleep(self.wake_pause_s)
 
     async def _pick_remote(self) -> str | None:
         self.events.pick_started()

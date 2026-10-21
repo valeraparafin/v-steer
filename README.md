@@ -35,8 +35,8 @@ Run `V-Steer.exe` (or tick **Start with Windows** in its menu), then start Zwift
   **KICKR BIKE PRO 1337** once per ride; it is listed at once. Zwift restores only Bluetooth
   devices by itself, not Wi-Fi ones like this ([#10](https://github.com/valeraparafin/v-steer/issues/10)).
 
-With no Zwift for 10 min, V-Steer lets the remote go so it can sleep and save its battery. After
-pairing in Zwift, press any button on the remote once to wake it.
+With no Zwift for 10 min, V-Steer lets the remote go so it can sleep and save its battery. To use
+it again, press any button on the remote: it reconnects by itself.
 
 ## The tray icon
 
