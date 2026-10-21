@@ -38,7 +38,7 @@ def icon_state(status: Status, error: str | None) -> IconState:
 
 def status_line(status: Status) -> str:
     if status.vs200 is InputState.ASLEEP:
-        remote = "asleep until Zwift connects"
+        remote = "asleep, press a button to wake"
     else:
         remote = "connected" if _remote_ok(status) else "searching"
         if _remote_ok(status) and status.battery is not None:

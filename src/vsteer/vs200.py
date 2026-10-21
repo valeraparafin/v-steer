@@ -28,7 +28,7 @@ def parse_packet(data: bytes) -> Tap | None:
 class InputState(Enum):
     SEARCHING = "searching"
     CONNECTED = "connected"
-    ASLEEP = "asleep"  # let go so it can sleep; searched again when Zwift connects
+    ASLEEP = "asleep"  # let go so it can sleep; a button press or Zwift brings it back
 
 
 async def _bleak_find(address: str, timeout: float):

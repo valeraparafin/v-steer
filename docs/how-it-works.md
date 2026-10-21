@@ -47,6 +47,9 @@ follows its notifications. `Core` keeps it in `Status.battery`; the emulator ans
 **Letting the remote sleep.** A connected VS200 never sleeps, so it would drain its battery all day.
 When Zwift has not been connected for 10 min (`RELEASE_AFTER_S`), the session cancels the remote's
 input task and reports it as `asleep`; when Zwift connects again, it starts searching for the remote.
+Meanwhile a wake watch scans for the remote: once it has been unseen for 30 s it is asleep, and the
+next sighting means a button woke it, so the session connects (`WakeWatch`). A remote still awake
+right after the release is never reconnected this way, so it can fall asleep.
 
 ## Run from source
 
