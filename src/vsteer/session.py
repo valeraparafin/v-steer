@@ -20,6 +20,8 @@ HINT_AFTER_S = 60
 PICK_TIMEOUT_S = 120
 RELEASE_AFTER_S = 600  # no Zwift this long: let the remote sleep (#2)
 RELEASE_CHECK_S = 5
+ASLEEP_AFTER_S = 30  # a released remote unseen this long has gone to sleep (#39)
+WAKE_PAUSE_S = 1
 
 
 class Events:
@@ -85,6 +87,33 @@ class ReleaseTimer:
             return False
         self._fired = True
         return True
+
+
+class WakeWatch:
+    """Tells a remote woken by a button press from one still awake after its release.
+
+    It fires once, on the first sighting after the remote has been unseen for `asleep_after_s`:
+    reconnecting before it slept would keep it awake, which the release is there to stop.
+    """
+
+    def __init__(self, asleep_after_s: float = ASLEEP_AFTER_S) -> None:
+        self.asleep_after_s = asleep_after_s
+        self._last_seen: float | None = None
+        self._asleep = False
+
+    @property
+    def asleep(self) -> bool:
+        return self._asleep
+
+    def update(self, seen: bool, now: float) -> bool:
+        if self._last_seen is None:  # just released: it was connected a moment ago
+            self._last_seen = now
+        if not seen:
+            self._asleep = self._asleep or now - self._last_seen >= self.asleep_after_s
+            return False
+        self._last_seen = now
+        woken, self._asleep = self._asleep, False
+        return woken
 
 
 async def _hint_loop(emulator: RideEmulator) -> None:

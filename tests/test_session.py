@@ -6,7 +6,7 @@ import pytest
 
 from vsteer import config
 from vsteer.config import Config
-from vsteer.session import Events, HintTimer, ReleaseTimer, Session
+from vsteer.session import Events, HintTimer, ReleaseTimer, Session, WakeWatch
 from vsteer.update import RELEASES_PAGE
 from vsteer.vs200 import InputState
 from vsteer.zwift.ride import EmulatorState
@@ -494,3 +494,31 @@ async def test_the_input_reports_the_battery_to_the_emulator(tmp_path):
     assert events.named("status")[-1][1].battery == 25
     await session.stop()
     await task
+
+
+def test_wake_watch_waits_for_sleep_first():
+    """#39: a remote still advertising after the release is not 'woken'; it must sleep first."""
+    w = WakeWatch(asleep_after_s=30)
+    assert not w.update(True, 0)
+    assert not w.update(True, 100)
+    assert not w.update(True, 1000)
+    assert not w.asleep
+
+
+def test_wake_watch_ignores_a_short_gap():
+    w = WakeWatch(asleep_after_s=30)
+    w.update(True, 0)
+    w.update(False, 10)
+    w.update(False, 29)
+    assert not w.asleep
+    assert not w.update(True, 35)
+
+
+def test_wake_watch_fires_once_after_sleep():
+    w = WakeWatch(asleep_after_s=30)
+    w.update(True, 0)
+    w.update(False, 10)
+    w.update(False, 41)
+    assert w.asleep
+    assert w.update(True, 50)
+    assert not w.update(True, 55)
