@@ -1,6 +1,8 @@
+from dataclasses import fields
+
 import pytest
 
-from vsteer.config import Config, ConfigError, load, save
+from vsteer.config import KNOWN_KEYS, SETTINGS, Config, ConfigError, Setting, by_section, load, save
 
 
 def test_missing_file_is_created_with_defaults(tmp_path):
@@ -177,3 +179,41 @@ def test_a_broken_file_error_says_how_to_recover(tmp_path):
     p.write_text('[zwift]\ndevice_name = "broken\n', encoding="utf-8")
     with pytest.raises(ConfigError, match="delete"):
         load(p)
+
+
+def test_every_setting_is_written_read_and_known(tmp_path):
+    """#22: one table; a setting can't be in the file but missing from load() or the key checks."""
+    p = tmp_path / "config.toml"
+    save(Config(), p)
+    text = p.read_text(encoding="utf-8")
+    for s in SETTINGS:
+        section = text.split(f"[{s.section}]\n", 1)[1].split("\n\n", 1)[0]
+        assert f"{s.key} = " in section
+        assert s.key in KNOWN_KEYS[s.section]
+    assert {f.name for f in fields(Config)} == {s.field for s in SETTINGS}
+
+
+def test_saved_file_matches_the_old_template(tmp_path):
+    """Same sections, keys, order, values and comments as v0.2.1 wrote (spacing before # may differ)."""
+    p = tmp_path / "config.toml"
+    save(Config(), p)
+    old = (
+        '[vs200]\naddress = ""   # filled on first run\nswap = false               # false: + = right, - = left\n\n'
+        "[steer]\npulse_ms = 200       # how long one tap holds the D-pad (50..2000)\n\n"
+        '[zwift]\ndevice_name = "KICKR BIKE PRO 1337"\n\n'
+        '[network]\naddress = ""   # empty = auto\n\n'
+        "[updates]\ncheck = true        # look for a new version on GitHub at start\n"
+    )
+
+    def squeeze(text):
+        return [" ".join(line.split()) for line in text.splitlines()]
+    assert squeeze(p.read_text(encoding="utf-8")) == squeeze(old)
+
+
+def test_settings_of_one_section_need_not_be_adjacent():
+    """Review of #41: a setting appended later to an existing section joins it, once."""
+    settings = (Setting("vs200", "address", "vs200_address"), Setting("steer", "pulse_ms", "pulse_ms"),
+                Setting("vs200", "swap", "swap"))
+    grouped = by_section(settings)
+    assert list(grouped) == ["vs200", "steer"]
+    assert [s.key for s in grouped["vs200"]] == ["address", "swap"]

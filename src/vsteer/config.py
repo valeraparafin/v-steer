@@ -28,6 +28,9 @@ class Config:
     check_updates: bool = True
 
 
+_DEFAULTS = Config()
+
+
 class ConfigError(Exception):
     pass
 
@@ -43,23 +46,42 @@ def default_path() -> Path:
     return _appdata() / APP_DIR_NAME / "config.toml"
 
 
-_TEMPLATE = """\
-[vs200]
-address = {vs200_address}   # filled on first run
-swap = {swap}               # false: + = right, - = left
+@dataclass(frozen=True)
+class Setting:
+    """One line of config.toml: where it lives, which Config field it fills, and its comment."""
 
-[steer]
-pulse_ms = {pulse_ms}       # how long one tap holds the D-pad ({min}..{max})
+    section: str
+    key: str
+    field: str
+    comment: str = ""
 
-[zwift]
-device_name = {device_name}
+    @property
+    def kind(self) -> type:
+        """The type a value must have: the Config field's default type, so the two can't disagree."""
+        return type(getattr(_DEFAULTS, self.field))
 
-[network]
-address = {network_address}   # empty = auto
 
-[updates]
-check = {check_updates}        # look for a new version on GitHub at start
-"""
+# The one list of settings (#22): it writes the file, reads it, and tells typos from missing keys.
+SETTINGS: tuple[Setting, ...] = (
+    Setting("vs200", "address", "vs200_address", "filled on first run"),
+    Setting("vs200", "swap", "swap", "false: + = right, - = left"),
+    Setting("steer", "pulse_ms", "pulse_ms", f"how long one tap holds the D-pad ({PULSE_MIN_MS}..{PULSE_MAX_MS})"),
+    Setting("zwift", "device_name", "device_name"),
+    Setting("network", "address", "network_address", "empty = auto"),
+    Setting("updates", "check", "check_updates", "look for a new version on GitHub at start"),
+)
+
+
+def by_section(settings: tuple[Setting, ...]) -> dict[str, list[Setting]]:
+    """Settings per section, in first-seen order; a section's settings need not be adjacent."""
+    grouped: dict[str, list[Setting]] = {}
+    for s in settings:
+        grouped.setdefault(s.section, []).append(s)
+    return grouped
+
+
+# Every key the file holds: anything else in it is a typo or left over.
+KNOWN_KEYS: dict[str, set[str]] = {section: {s.key for s in group} for section, group in by_section(SETTINGS).items()}
 
 
 def _toml_str(value: str) -> str:
@@ -75,34 +97,32 @@ def _toml_str(value: str) -> str:
     return '"' + "".join(out) + '"'
 
 
+def _toml_value(value) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return _toml_str(value) if isinstance(value, str) else str(value)
+
+
+def _render(cfg: Config) -> str:
+    def line(s: Setting) -> str:
+        text = f"{s.key} = {_toml_value(getattr(cfg, s.field))}"
+        return f"{text}  # {s.comment}" if s.comment else text
+
+    blocks = ([f"[{section}]", *map(line, group)] for section, group in by_section(SETTINGS).items())
+    return "\n\n".join("\n".join(block) for block in blocks) + "\n"
+
+
 def save(cfg: Config, path: Path) -> None:
     """Write via a temp file and an atomic replace: a crash mid-write keeps the old config."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(
-        _TEMPLATE.format(
-            vs200_address=_toml_str(cfg.vs200_address),
-            swap="true" if cfg.swap else "false",
-            pulse_ms=cfg.pulse_ms,
-            min=PULSE_MIN_MS,
-            max=PULSE_MAX_MS,
-            device_name=_toml_str(cfg.device_name),
-            network_address=_toml_str(cfg.network_address),
-            check_updates="true" if cfg.check_updates else "false",
-        ),
+        _render(cfg),
         encoding="utf-8",
     )
     os.replace(tmp, path)
 
 
-# Every key the template writes: anything else in the file is a typo or left over.
-KNOWN_KEYS = {
-    "vs200": {"address", "swap"},
-    "steer": {"pulse_ms"},
-    "zwift": {"device_name"},
-    "network": {"address"},
-    "updates": {"check"},
-}
 _BLUETOOTH_ADDRESS = re.compile(r"[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}")
 
 
@@ -143,14 +163,9 @@ def load(path: Path) -> Config:
             "(you will pick the remote again)."
         ) from exc
     defaults = Config()
-    cfg = Config(
-        vs200_address=_get(data, "vs200", "address", str, defaults.vs200_address, path),
-        swap=_get(data, "vs200", "swap", bool, defaults.swap, path),
-        pulse_ms=_get(data, "steer", "pulse_ms", int, defaults.pulse_ms, path),
-        device_name=_get(data, "zwift", "device_name", str, defaults.device_name, path),
-        network_address=_get(data, "network", "address", str, defaults.network_address, path),
-        check_updates=_get(data, "updates", "check", bool, defaults.check_updates, path),
-    )
+    cfg = Config(**{
+        st.field: _get(data, st.section, st.key, st.kind, getattr(defaults, st.field), path) for st in SETTINGS
+    })
     if not PULSE_MIN_MS <= cfg.pulse_ms <= PULSE_MAX_MS:
         raise ConfigError(f"{path}: steer.pulse_ms must be {PULSE_MIN_MS}..{PULSE_MAX_MS}, got {cfg.pulse_ms}")
     if not 1 <= len(cfg.device_name.encode("utf-8")) <= MDNS_NAME_MAX_BYTES:

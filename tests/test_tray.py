@@ -55,6 +55,7 @@ class FakeIcon:
     instances: ClassVar[list] = []
 
     def __init__(self, name, icon=None, title=None, menu=None):
+        self.icon_sets = -1  # the constructor's own set does not count
         self.name, self.icon, self.title, self.menu = name, icon, title, menu
         self.visible = False
         self.notes = []
@@ -74,7 +75,19 @@ class FakeIcon:
         self.notes.append((message, title))
 
     def update_menu(self):
+        """Like pystray on Windows: rebuilding the menu evaluates every item's callables."""
         self.menu_updates += 1
+        for item in self.menu.items:
+            item.text, item.checked, item.enabled, item.visible  # noqa: B018
+
+    @property
+    def icon(self):
+        return self._icon
+
+    @icon.setter
+    def icon(self, image):  # pystray re-uploads the image on every set, same image or not
+        self._icon = image
+        self.icon_sets += 1
 
 
 backend = SimpleNamespace(Icon=FakeIcon, Menu=FakeMenu, MenuItem=FakeMenuItem)
@@ -116,7 +129,10 @@ class FakeAutostart:
     def available(self):
         return self._available
 
+    reads = 0
+
     def is_enabled(self):
+        self.reads += 1
         return self.enabled
 
     def enable(self, path):
@@ -420,3 +436,66 @@ def test_low_battery_notifies_once(tmp_path):
     h.session.events.status(replace(low, battery=9))
     assert h.icon.notes == [("The steering remote's battery is at 10%. Charge it soon.", "V-Steer")]
     h.quit()
+
+
+def test_menu_is_rebuilt_only_when_its_content_changes(tmp_path):
+    """#31: a status that changes nothing in the menu does not rebuild it or read the registry."""
+    h = Harness(tmp_path).start()
+    events = h.session.events
+    events.status(Status(vs200=InputState.CONNECTED, battery=50))
+    before = h.icon.menu_updates
+    events.status(Status(vs200=InputState.CONNECTED, battery=50))
+    assert h.icon.menu_updates == before
+    events.status(Status(vs200=InputState.CONNECTED, zwift=EmulatorState.READY, battery=50))
+    assert h.icon.menu_updates == before + 1
+    h.quit()
+
+
+def test_ctrl_c_in_the_tray_stops_the_session(tmp_path):
+    """#28: Ctrl+C from run.cmd goes through Quit's shutdown, not straight out of main()."""
+    class InterruptedIcon(FakeIcon):
+        def run(self, setup=None):
+            threading.Thread(target=setup, args=(self,)).start()
+            wait_for(lambda: h.sessions and h.sessions[0].calls)
+            raise KeyboardInterrupt
+
+    h = Harness(tmp_path)
+    h.app._backend = SimpleNamespace(Icon=InterruptedIcon, Menu=FakeMenu, MenuItem=FakeMenuItem)
+    assert h.app.run() == 0
+    assert "stop" in h.sessions[0].calls
+
+
+def test_status_changes_do_not_read_the_registry(tmp_path):
+    """/simplify: the Start with Windows checkmark is cached, not read on every menu rebuild."""
+    h = Harness(tmp_path).start()
+    events = h.session.events
+    events.status(Status(vs200=InputState.CONNECTED, battery=50))
+    reads = h.autostart.reads
+    for level in (49, 48, 47):
+        events.status(Status(vs200=InputState.CONNECTED, battery=level))
+    assert h.autostart.reads == reads
+    h.quit()
+
+
+def test_icon_image_is_kept_while_its_state_is_the_same(tmp_path):
+    h = Harness(tmp_path).start()
+    events = h.session.events
+    events.status(Status(vs200=InputState.CONNECTED, battery=50))
+    sets = h.icon.icon_sets
+    events.status(Status(vs200=InputState.CONNECTED, battery=49))
+    assert h.icon.icon_sets == sets
+    h.quit()
+
+
+def test_ctrl_c_during_quit_stops_the_session_once(tmp_path):
+    class QuitThenInterrupt(FakeIcon):
+        def run(self, setup=None):
+            threading.Thread(target=setup, args=(self,)).start()
+            wait_for(lambda: h.sessions and h.sessions[0].calls)
+            h.app._quit()
+            raise KeyboardInterrupt
+
+    h = Harness(tmp_path)
+    h.app._backend = SimpleNamespace(Icon=QuitThenInterrupt, Menu=FakeMenu, MenuItem=FakeMenuItem)
+    assert h.app.run() == 0
+    assert h.sessions[0].calls.count("stop") == 1
