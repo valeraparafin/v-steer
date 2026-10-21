@@ -27,9 +27,14 @@ class Core:
     def __init__(self, cfg: Config, emulator) -> None:
         self.cfg = cfg
         self.emulator = emulator
-        self.status = Status(vs200_address=cfg.vs200_address)
+        self._status = Status(vs200_address=cfg.vs200_address)
         self._listeners: list[Callable[[Status], None]] = []
         self._tasks: set[asyncio.Task] = set()
+
+    @property
+    def status(self) -> Status:
+        """Read-only: changes go through _update so every listener hears them (#30)."""
+        return self._status
 
     def subscribe(self, listener: Callable[[Status], None]) -> None:
         self._listeners.append(listener)
@@ -78,6 +83,6 @@ class Core:
     def _update(self, **changes) -> None:
         new = replace(self.status, **changes)
         if new != self.status:
-            self.status = new
+            self._status = new
             for listener in self._listeners:
                 listener(new)

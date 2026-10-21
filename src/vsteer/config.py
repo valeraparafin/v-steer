@@ -8,6 +8,8 @@ import os
 import re
 import tomllib
 from dataclasses import dataclass
+from itertools import groupby
+from operator import attrgetter
 from pathlib import Path
 
 from .zwift.protocol import DEFAULT_DEVICE_NAME
@@ -26,6 +28,9 @@ class Config:
     device_name: str = DEFAULT_DEVICE_NAME
     network_address: str = ""
     check_updates: bool = True
+
+
+_DEFAULTS = Config()
 
 
 class ConfigError(Exception):
@@ -50,23 +55,27 @@ class Setting:
     section: str
     key: str
     field: str
-    kind: type
     comment: str = ""
+
+    @property
+    def kind(self) -> type:
+        """The type a value must have: the Config field's default type, so the two can't disagree."""
+        return type(getattr(_DEFAULTS, self.field))
 
 
 # The one list of settings (#22): it writes the file, reads it, and tells typos from missing keys.
 SETTINGS: tuple[Setting, ...] = (
-    Setting("vs200", "address", "vs200_address", str, "filled on first run"),
-    Setting("vs200", "swap", "swap", bool, "false: + = right, - = left"),
-    Setting("steer", "pulse_ms", "pulse_ms", int, f"how long one tap holds the D-pad ({PULSE_MIN_MS}..{PULSE_MAX_MS})"),
-    Setting("zwift", "device_name", "device_name", str),
-    Setting("network", "address", "network_address", str, "empty = auto"),
-    Setting("updates", "check", "check_updates", bool, "look for a new version on GitHub at start"),
+    Setting("vs200", "address", "vs200_address", "filled on first run"),
+    Setting("vs200", "swap", "swap", "false: + = right, - = left"),
+    Setting("steer", "pulse_ms", "pulse_ms", f"how long one tap holds the D-pad ({PULSE_MIN_MS}..{PULSE_MAX_MS})"),
+    Setting("zwift", "device_name", "device_name"),
+    Setting("network", "address", "network_address", "empty = auto"),
+    Setting("updates", "check", "check_updates", "look for a new version on GitHub at start"),
 )
 # Every key the file holds: anything else in it is a typo or left over.
-KNOWN_KEYS: dict[str, set[str]] = {}
-for _s in SETTINGS:
-    KNOWN_KEYS.setdefault(_s.section, set()).add(_s.key)
+KNOWN_KEYS: dict[str, set[str]] = {
+    section: {s.key for s in group} for section, group in groupby(SETTINGS, key=attrgetter("section"))
+}
 
 
 def _toml_str(value: str) -> str:
@@ -89,14 +98,11 @@ def _toml_value(value) -> str:
 
 
 def _render(cfg: Config) -> str:
-    blocks: list[list[str]] = []
-    section = None
-    for s in SETTINGS:
-        if s.section != section:
-            section = s.section
-            blocks.append([f"[{section}]"])
-        line = f"{s.key} = {_toml_value(getattr(cfg, s.field))}"
-        blocks[-1].append(f"{line}  # {s.comment}" if s.comment else line)
+    def line(s: Setting) -> str:
+        text = f"{s.key} = {_toml_value(getattr(cfg, s.field))}"
+        return f"{text}  # {s.comment}" if s.comment else text
+
+    blocks = ([f"[{section}]", *map(line, group)] for section, group in groupby(SETTINGS, key=attrgetter("section")))
     return "\n\n".join("\n".join(block) for block in blocks) + "\n"
 
 

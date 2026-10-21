@@ -133,8 +133,11 @@ class TrayApp:
         self.loop = BackgroundLoop()
         self.notifier = Notifier(self._notify)
         self._icon = None
+        self._icon_shown: IconState | None = None  # pystray re-uploads the image on every set
         self._menu_shown = None  # what the menu showed when last rebuilt (#31)
+        self._autostart_enabled: bool | None = None  # the Run key, read once and kept in step on toggle
         self._quitting = False
+        self._quit_thread: threading.Thread | None = None
 
     # --- running -----------------------------------------------------------------
 
@@ -143,8 +146,9 @@ class TrayApp:
         try:
             self._show(self._start_session)
         except KeyboardInterrupt:  # Ctrl+C from run.cmd: stop like Quit, or mDNS and the remote stay held
-            self._quitting = True
-            self._shutdown()
+            self._quit()  # no-op when a Quit is already running
+            if self._quit_thread is not None:
+                self._quit_thread.join(QUIT_TIMEOUT_S + 1)
         return 0
 
     def run_error(self, reason: str) -> int:
@@ -207,23 +211,27 @@ class TrayApp:
         with self._lock:
             return icon_state(self._status, self._error), tooltip(self._version, self._status, self._error)
 
-    def refresh(self, *, menu_changed: bool = False) -> None:
-        """Redraw the icon and tooltip; rebuild the menu only when what it shows has changed."""
+    def refresh(self) -> None:
+        """Redraw what changed: the icon image, the tooltip, and the menu only when its content differs."""
         icon = self._icon
         if icon is None:
             return
         state, title = self._looks()
-        icon.icon = _image(state)
+        if state is not self._icon_shown:
+            self._icon_shown = state
+            icon.icon = _image(state)
         icon.title = title
         shown = self._menu_content()
-        if menu_changed or shown != self._menu_shown:
+        if shown != self._menu_shown:
             self._menu_shown = shown
-            icon.update_menu()  # rebuilds the Win32 menu and reads the Run key for its checkmark
+            icon.update_menu()
 
     def _menu_content(self) -> tuple:
+        """Everything the menu's callables show; the menu is rebuilt when this changes."""
         with self._lock:
             update_tag = self._update_tag
-        return self._status_text(), update_tag, self._swap_on(), self._has_session(), self._can_pick()
+        return (self._status_text(), update_tag, self._swap_on(), self._has_session(), self._can_pick(),
+                self._autostart_on())
 
     def _notify(self, message: str) -> None:
         if self._icon is not None:
@@ -297,19 +305,24 @@ class TrayApp:
 
     def _autostart_on(self) -> bool:
         try:
-            return self._autostart.is_enabled()
+            if self._autostart_enabled is None:
+                self._autostart_enabled = self._autostart.is_enabled()
+            return self._autostart_enabled
         except OSError:
             return False
 
     def _toggle_autostart(self) -> None:
         try:
-            if self._autostart.is_enabled():
+            if self._autostart_on():
                 self._autostart.disable()
+                self._autostart_enabled = False
             else:
                 self._autostart.enable(self._exe_path)
+                self._autostart_enabled = True
         except OSError as exc:
             log.warning("Could not change Start with Windows: %s", exc)
-        self.refresh(menu_changed=True)  # the checkmark comes from the registry
+            self._autostart_enabled = None  # unsure now: read the Run key again
+        self.refresh()
 
     def _open(self, path: Path) -> None:
         try:
@@ -334,7 +347,8 @@ class TrayApp:
             return
         self._quitting = True
         # Off the tray's thread: the icon must keep pumping messages while the session shuts down.
-        threading.Thread(target=self._shutdown, name="v-steer-quit").start()
+        self._quit_thread = threading.Thread(target=self._shutdown, name="v-steer-quit")
+        self._quit_thread.start()
 
     def _shutdown(self) -> None:
         session = self.session
