@@ -355,7 +355,7 @@ class Session:
         core = self._core
         if core is None:
             return
-        core.status = Status(core.status.vs200, core.status.zwift, self.cfg.vs200_address)
+        core.set_address(self.cfg.vs200_address)
         vs200 = self._input_factory(self.cfg.vs200_address, on_tap=core.on_tap, on_state=core.on_input_state,
                                     on_battery=core.on_battery)
         self._input_task = asyncio.create_task(vs200.run())

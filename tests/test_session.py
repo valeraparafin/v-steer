@@ -662,3 +662,13 @@ async def test_scan_errors_do_not_count_as_sleep(tmp_path):
     assert session.released and len(FakeInput.instances) == 1
     await session.stop()
     await task
+
+
+async def test_pick_another_announces_the_new_address(tmp_path):
+    session, events = _session(tmp_path, pick=_picks("B2:B2:B2:B2:B2:B2"))
+    task = asyncio.create_task(session.run())
+    await until(lambda: FakeInput.instances)
+    await session.pick_another()
+    assert events.named("status")[-1][1].vs200_address == "B2:B2:B2:B2:B2:B2"
+    await session.stop()
+    await task

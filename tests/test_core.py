@@ -88,3 +88,12 @@ def test_a_late_battery_level_after_a_drop_is_ignored():
     core.on_input_state(InputState.SEARCHING)
     core.on_battery(14)
     assert core.status.battery is None
+
+
+def test_set_address_notifies_listeners():
+    """#30: a new remote's address reaches the UI at once, not on the next state change."""
+    core = Core(Config(vs200_address="AA:AA:AA:AA:AA:AA"), FakeEmulator())
+    seen = []
+    core.subscribe(seen.append)
+    core.set_address("B2:B2:B2:B2:B2:B2")
+    assert seen[-1].vs200_address == "B2:B2:B2:B2:B2:B2"

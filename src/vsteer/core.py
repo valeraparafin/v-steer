@@ -68,6 +68,10 @@ class Core:
         self.emulator.set_battery(level)
         self._update(battery=level)
 
+    def set_address(self, address: str) -> None:
+        """A new remote: its address is shown at once, and the old one's battery level is dropped."""
+        self._update(vs200_address=address, battery=None)
+
     def on_emulator_state(self, state: EmulatorState) -> None:
         self._update(zwift=state)
 
