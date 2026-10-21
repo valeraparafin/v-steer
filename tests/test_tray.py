@@ -420,3 +420,16 @@ def test_low_battery_notifies_once(tmp_path):
     h.session.events.status(replace(low, battery=9))
     assert h.icon.notes == [("The steering remote's battery is at 10%. Charge it soon.", "V-Steer")]
     h.quit()
+
+
+def test_menu_is_rebuilt_only_when_its_content_changes(tmp_path):
+    """#31: a status that changes nothing in the menu does not rebuild it or read the registry."""
+    h = Harness(tmp_path).start()
+    events = h.session.events
+    events.status(Status(vs200=InputState.CONNECTED, battery=50))
+    before = h.icon.menu_updates
+    events.status(Status(vs200=InputState.CONNECTED, battery=50))
+    assert h.icon.menu_updates == before
+    events.status(Status(vs200=InputState.CONNECTED, zwift=EmulatorState.READY, battery=50))
+    assert h.icon.menu_updates == before + 1
+    h.quit()

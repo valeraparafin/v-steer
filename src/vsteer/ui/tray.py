@@ -93,7 +93,7 @@ class TrayEvents(Events):
         self._app = app
 
     def status(self, s: Status) -> None:
-        self._app._set(status=s)
+        self._app.set_status(s)
         if battery_low(s):
             self._app.notifier.once("battery", level=s.battery)
 
@@ -104,11 +104,11 @@ class TrayEvents(Events):
         self._app.notifier.once("picked", device=device)
 
     def update_available(self, tag: str) -> None:
-        self._app._set(update_tag=tag)
+        self._app.set_update(tag)
         self._app.notifier.once("update", tag=tag)
 
     def fatal(self, reason: str) -> None:
-        self._app._set(error=reason)
+        self._app.set_error(reason)
         self._app.notifier.once("error", reason=reason)
 
 
@@ -133,6 +133,7 @@ class TrayApp:
         self.loop = BackgroundLoop()
         self.notifier = Notifier(self._notify)
         self._icon = None
+        self._menu_shown = None  # what the menu showed when last rebuilt (#31)
         self._quitting = False
 
     # --- running -----------------------------------------------------------------
@@ -178,33 +179,47 @@ class TrayApp:
 
     def _crashed(self, exc: BaseException) -> None:
         log.error("V-Steer stopped on an unexpected error", exc_info=exc)
-        self._set(error=f"unexpected error: {exc}")
+        self.set_error(f"unexpected error: {exc}")
         self.notifier.once("error", reason=f"unexpected error: {exc}")
 
     # --- what the tray shows --------------------------------------------------------
 
-    def _set(self, **changes) -> None:
+    def set_status(self, status: Status) -> None:
         with self._lock:
-            if "status" in changes:
-                self._status = changes["status"]
-            if "error" in changes:
-                self._error = changes["error"]
-            if "update_tag" in changes:
-                self._update_tag = changes["update_tag"]
+            self._status = status
+        self.refresh()
+
+    def set_error(self, reason: str) -> None:
+        with self._lock:
+            self._error = reason
+        self.refresh()
+
+    def set_update(self, tag: str) -> None:
+        with self._lock:
+            self._update_tag = tag
         self.refresh()
 
     def _looks(self) -> tuple[IconState, str]:
         with self._lock:
             return icon_state(self._status, self._error), tooltip(self._version, self._status, self._error)
 
-    def refresh(self) -> None:
+    def refresh(self, *, menu_changed: bool = False) -> None:
+        """Redraw the icon and tooltip; rebuild the menu only when what it shows has changed."""
         icon = self._icon
         if icon is None:
             return
         state, title = self._looks()
         icon.icon = _image(state)
         icon.title = title
-        icon.update_menu()
+        shown = self._menu_content()
+        if menu_changed or shown != self._menu_shown:
+            self._menu_shown = shown
+            icon.update_menu()  # rebuilds the Win32 menu and reads the Run key for its checkmark
+
+    def _menu_content(self) -> tuple:
+        with self._lock:
+            update_tag = self._update_tag
+        return self._status_text(), update_tag, self._swap_on(), self._has_session(), self._can_pick()
 
     def _notify(self, message: str) -> None:
         if self._icon is not None:
@@ -219,12 +234,11 @@ class TrayApp:
 
     def _menu(self):
         item, separator = self._backend.MenuItem, self._backend.Menu.SEPARATOR
-        has_session = lambda _item: self.session is not None
         return self._backend.Menu(
             item(self._status_text, None, enabled=False),
-            item("Swap + and −", self._toggle_swap, checked=lambda _item: self._swap_on(), enabled=has_session),
-            item("Pick another remote…", self._pick_another,
-                 enabled=lambda _item: self.session is not None and self._error is None),
+            item("Swap + and −", self._toggle_swap, checked=lambda _item: self._swap_on(),
+                 enabled=lambda _item: self._has_session()),
+            item("Pick another remote…", self._pick_another, enabled=lambda _item: self._can_pick()),
             item("Start with Windows", self._toggle_autostart, checked=lambda _item: self._autostart_on(),
                  visible=self._autostart.available()),
             separator,
@@ -249,6 +263,12 @@ class TrayApp:
             log.info("%s ignored: the background session has stopped", what)
             return False
         return True
+
+    def _has_session(self) -> bool:
+        return self.session is not None
+
+    def _can_pick(self) -> bool:
+        return self._has_session() and self._error is None
 
     def _swap_on(self) -> bool:
         return bool(self.session and self.session.cfg.swap)
@@ -285,7 +305,7 @@ class TrayApp:
                 self._autostart.enable(self._exe_path)
         except OSError as exc:
             log.warning("Could not change Start with Windows: %s", exc)
-        self.refresh()
+        self.refresh(menu_changed=True)  # the checkmark comes from the registry
 
     def _open(self, path: Path) -> None:
         try:
